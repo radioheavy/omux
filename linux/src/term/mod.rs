@@ -33,7 +33,10 @@ pub enum TermEvent {
     /// The current OSC 7501 records, oldest update first.
     Status(Vec<Record>),
     /// OSC 9 / OSC 777.
-    Notification { title: Option<String>, body: String },
+    Notification {
+        title: Option<String>,
+        body: String,
+    },
     Exited,
 }
 
@@ -73,22 +76,26 @@ impl SessionTerminal {
         let weak = Rc::downgrade(&this);
         this.widget.connect_window_title_changed(move |term| {
             if let Some(this) = weak.upgrade() {
-                let title = term.window_title().map(|t| t.to_string()).unwrap_or_default();
+                let title = term
+                    .window_title()
+                    .map(|t| t.to_string())
+                    .unwrap_or_default();
                 this.emit(TermEvent::Title(title));
             }
         });
 
         let weak = Rc::downgrade(&this);
-        this.widget.connect_current_directory_uri_changed(move |term| {
-            if let Some(this) = weak.upgrade() {
-                if let Some(uri) = term.current_directory_uri() {
-                    let path = glib::filename_from_uri(&uri)
-                        .map(|(path, _)| path.display().to_string())
-                        .unwrap_or_else(|_| uri.to_string());
-                    this.emit(TermEvent::Cwd(path));
+        this.widget
+            .connect_current_directory_uri_changed(move |term| {
+                if let Some(this) = weak.upgrade() {
+                    if let Some(uri) = term.current_directory_uri() {
+                        let path = glib::filename_from_uri(&uri)
+                            .map(|(path, _)| path.display().to_string())
+                            .unwrap_or_else(|_| uri.to_string());
+                        this.emit(TermEvent::Cwd(path));
+                    }
                 }
-            }
-        });
+            });
 
         let weak = Rc::downgrade(&this);
         this.widget.connect_bell(move |_| {
@@ -128,12 +135,26 @@ impl SessionTerminal {
     }
 
     /// Starts the login shell. Any previous process is killed first.
-    pub fn spawn(self: &Rc<Self>, shell: &str, cwd: &Path, env: Vec<(String, String)>) -> std::io::Result<i32> {
+    pub fn spawn(
+        self: &Rc<Self>,
+        shell: &str,
+        cwd: &Path,
+        env: Vec<(String, String)>,
+    ) -> std::io::Result<i32> {
         self.kill();
         let (tx, rx) = async_channel::unbounded();
         let rows = self.widget.row_count().max(1) as u16;
         let cols = self.widget.column_count().max(1) as u16;
-        let pty = Pty::spawn(Spawn { shell, cwd, env, rows, cols }, tx)?;
+        let pty = Pty::spawn(
+            Spawn {
+                shell,
+                cwd,
+                env,
+                rows,
+                cols,
+            },
+            tx,
+        )?;
         let pid = pty.pid();
         *self.pty.borrow_mut() = Some(pty);
         self.size.set((0, 0));

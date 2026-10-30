@@ -94,7 +94,10 @@ pub struct Store {
 impl Store {
     /// Current records, oldest update first, with `effective_app` filled in.
     pub fn snapshots(&self) -> Vec<Record> {
-        self.order.iter().filter_map(|id| self.snapshot(id)).collect()
+        self.order
+            .iter()
+            .filter_map(|id| self.snapshot(id))
+            .collect()
     }
 
     pub fn snapshot(&self, id: &str) -> Option<Record> {
@@ -371,8 +374,14 @@ mod tests {
         // Bytes outside the value alphabet make the pair malformed, so it's skipped.
         assert_eq!(record("state=working:msg=!!!").message, None);
         assert!(parse(b"state=working:msg=QQ=").is_none(), "wrong padding");
-        assert!(parse(b"state=working:id=a//b").is_none(), "empty id segment");
-        assert!(parse(b"state=working:id=a/b/c/d/e/f/g/h/i").is_none(), "too deep");
+        assert!(
+            parse(b"state=working:id=a//b").is_none(),
+            "empty id segment"
+        );
+        assert!(
+            parse(b"state=working:id=a/b/c/d/e/f/g/h/i").is_none(),
+            "too deep"
+        );
         // A control character inside the decoded text discards the report.
         assert!(parse(b"state=working:msg=AQ==").is_none());
     }
@@ -387,7 +396,12 @@ mod tests {
     #[test]
     fn clear_removes_record_and_descendants() {
         let mut store = Store::default();
-        for data in ["state=working", "state=working:id=a", "state=blocked:id=a/b", "state=done:id=ab"] {
+        for data in [
+            "state=working",
+            "state=working:id=a",
+            "state=blocked:id=a/b",
+            "state=done:id=ab",
+        ] {
             store.apply(parse(data.as_bytes()).unwrap());
         }
         store.apply(parse(b"state=clear:id=a").unwrap());
@@ -431,7 +445,12 @@ mod tests {
     #[test]
     fn remove_active_keeps_done_and_error() {
         let mut store = Store::default();
-        for data in ["state=working", "state=blocked:id=a", "state=done:id=b", "state=error:id=c"] {
+        for data in [
+            "state=working",
+            "state=blocked:id=a",
+            "state=done:id=b",
+            "state=error:id=c",
+        ] {
             store.apply(parse(data.as_bytes()).unwrap());
         }
         assert!(store.remove_active());

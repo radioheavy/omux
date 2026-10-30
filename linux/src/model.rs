@@ -64,7 +64,9 @@ impl SessionProvider {
         }
         const FLAGS: [&str; 5] = ["--resume", "-r", "--continue", "-c", "--session-id"];
         let user_managed = rest.split_whitespace().any(|word| {
-            FLAGS.contains(&word) || word.starts_with("--resume=") || word.starts_with("--session-id=")
+            FLAGS.contains(&word)
+                || word.starts_with("--resume=")
+                || word.starts_with("--session-id=")
         });
         if user_managed {
             return raw.to_string();
@@ -182,7 +184,11 @@ pub struct TabItem {
     #[serde(default, deserialize_with = "lenient_or_default")]
     pub color: TabColor,
     /// Stable Claude Code session id so the conversation resumes across relaunches.
-    #[serde(rename = "claudeSessionID", default = "Uuid::new_v4", with = "upper_uuid")]
+    #[serde(
+        rename = "claudeSessionID",
+        default = "Uuid::new_v4",
+        with = "upper_uuid"
+    )]
     pub claude_session_id: Uuid,
     /// Assigned by Codex, never guessed from the working directory or latest chat.
     #[serde(
@@ -381,7 +387,10 @@ mod tests {
         let group: TabGroup = serde_json::from_str(&json).unwrap();
         assert_eq!(group.provider, SessionProvider::Claude);
         assert_eq!(group.tabs[0].claude_session_id, id);
-        assert_eq!(group.tabs[0].resolved_provider(&group), SessionProvider::Claude);
+        assert_eq!(
+            group.tabs[0].resolved_provider(&group),
+            SessionProvider::Claude
+        );
         assert_eq!(group.command.as_deref(), Some("claude --model opus"));
     }
 
@@ -412,8 +421,16 @@ mod tests {
 
     #[test]
     fn custom_commands_remain_custom() {
-        for command in ["env codex", "codex exec task", "npm run dev", "/path/to/wrapper"] {
-            assert_eq!(SessionProvider::infer(Some(command)), SessionProvider::Custom);
+        for command in [
+            "env codex",
+            "codex exec task",
+            "npm run dev",
+            "/path/to/wrapper",
+        ] {
+            assert_eq!(
+                SessionProvider::infer(Some(command)),
+                SessionProvider::Custom
+            );
         }
     }
 
@@ -439,7 +456,10 @@ mod tests {
             "claude --session-id=abc",
             "claude --continue",
         ] {
-            assert_eq!(SessionProvider::claude_command(raw, Uuid::new_v4(), false), raw);
+            assert_eq!(
+                SessionProvider::claude_command(raw, Uuid::new_v4(), false),
+                raw
+            );
         }
     }
 

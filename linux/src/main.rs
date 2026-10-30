@@ -43,7 +43,10 @@ fn build_window(app: &adw::Application) {
             win.close();
         }
     });
-    let env = session_env::build(session_env::Extra { codex_token: None, repo: None });
+    let env = session_env::build(session_env::Extra {
+        codex_token: None,
+        repo: None,
+    });
     if let Err(err) = terminal.spawn(&session_env::shell(), &persistence::home_dir(), env) {
         eprintln!("omux: could not start shell: {err}");
     }

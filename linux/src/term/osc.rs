@@ -14,8 +14,13 @@ use super::status::{self, Report};
 pub enum Event {
     Status(Report),
     /// `OSC 7501 ; ?`; the reply must use the same terminator kind.
-    StatusQuery { bel: bool },
-    Notification { title: Option<String>, body: String },
+    StatusQuery {
+        bel: bool,
+    },
+    Notification {
+        title: Option<String>,
+        body: String,
+    },
     PromptStart,
 }
 
@@ -191,30 +196,50 @@ mod tests {
     fn finds_status_split_across_reads() {
         let events = scan(&[b"hello \x1b]75", b"01;state=work", b"ing\x1b", b"\\ world"]);
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], Event::Status(Report::Replace(r)) if r.state == status::State::Working));
+        assert!(
+            matches!(&events[0], Event::Status(Report::Replace(r)) if r.state == status::State::Working)
+        );
     }
 
     #[test]
     fn answers_queries_with_matching_terminator() {
-        assert_eq!(scan(&[b"\x1b]7501;?\x07"]), vec![Event::StatusQuery { bel: true }]);
-        assert_eq!(scan(&[b"\x1b]7501;?\x1b\\"]), vec![Event::StatusQuery { bel: false }]);
+        assert_eq!(
+            scan(&[b"\x1b]7501;?\x07"]),
+            vec![Event::StatusQuery { bel: true }]
+        );
+        assert_eq!(
+            scan(&[b"\x1b]7501;?\x1b\\"]),
+            vec![Event::StatusQuery { bel: false }]
+        );
     }
 
     #[test]
     fn notifications() {
         assert_eq!(
             scan(&[b"\x1b]9;Build finished\x07"]),
-            vec![Event::Notification { title: None, body: "Build finished".into() }]
+            vec![Event::Notification {
+                title: None,
+                body: "Build finished".into()
+            }]
         );
-        assert!(scan(&[b"\x1b]9;4;1;50\x07"]).is_empty(), "progress is not a notification");
+        assert!(
+            scan(&[b"\x1b]9;4;1;50\x07"]).is_empty(),
+            "progress is not a notification"
+        );
         assert!(scan(&[b"\x1b]9;12\x07"]).is_empty());
         assert_eq!(
             scan(&[b"\x1b]777;notify;Claude;Needs you; now\x1b\\"]),
-            vec![Event::Notification { title: Some("Claude".into()), body: "Needs you; now".into() }]
+            vec![Event::Notification {
+                title: Some("Claude".into()),
+                body: "Needs you; now".into()
+            }]
         );
         assert_eq!(
             scan(&["\x1b]777;notify;;Üzgünüm\x07".as_bytes()]),
-            vec![Event::Notification { title: None, body: "Üzgünüm".into() }],
+            vec![Event::Notification {
+                title: None,
+                body: "Üzgünüm".into()
+            }],
             "0x9C inside UTF-8 is not a terminator"
         );
         assert!(scan(&[b"\x1b]777;other;a;b\x07"]).is_empty());
@@ -232,7 +257,13 @@ mod tests {
         assert!(scan(&[b"\x1b]0;title\x07\x1b[31mred\x1b]7501;state=working\x18"]).is_empty());
         // An OSC interrupted by a new one: only the second counts.
         let events = scan(&[b"\x1b]9;lost\x1b]9;kept\x07"]);
-        assert_eq!(events, vec![Event::Notification { title: None, body: "kept".into() }]);
+        assert_eq!(
+            events,
+            vec![Event::Notification {
+                title: None,
+                body: "kept".into()
+            }]
+        );
     }
 
     #[test]
@@ -241,6 +272,12 @@ mod tests {
         long.extend(std::iter::repeat_n(b'x', MAX_OSC + 10));
         long.extend(b"\x07\x1b]9;after\x07");
         let events = scan(&[&long]);
-        assert_eq!(events, vec![Event::Notification { title: None, body: "after".into() }]);
+        assert_eq!(
+            events,
+            vec![Event::Notification {
+                title: None,
+                body: "after".into()
+            }]
+        );
     }
 }

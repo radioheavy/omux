@@ -100,7 +100,13 @@ mod tests {
     #[test]
     fn keys_use_mac_names() {
         let text = serde_json::to_string(&Settings::default()).unwrap();
-        for key in ["confirmQuit", "showFolderPath", "usageInterval", "notifyNeedsYou", "previewWrapLines"] {
+        for key in [
+            "confirmQuit",
+            "showFolderPath",
+            "usageInterval",
+            "notifyNeedsYou",
+            "previewWrapLines",
+        ] {
             assert!(text.contains(key), "{key}");
         }
     }

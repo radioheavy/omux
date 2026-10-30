@@ -7,7 +7,11 @@ use crate::term::pty;
 
 /// Variables that would make Claude Code think it runs inside another
 /// Claude Code session when omux itself was started from one.
-const STRIPPED: [&str; 3] = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"];
+const STRIPPED: [&str; 3] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SSE_PORT",
+];
 
 pub struct Extra<'a> {
     pub codex_token: Option<&'a str>,
@@ -30,7 +34,12 @@ fn build_from(inherited: Vec<(String, String)>, extra: Extra<'_>) -> Vec<(String
     let mut env: Vec<(String, String)> = inherited
         .into_iter()
         .filter(|(key, _)| !STRIPPED.contains(&key.as_str()) && !key.starts_with("OMUX_"))
-        .filter(|(key, _)| !matches!(key.as_str(), "TERM" | "COLORTERM" | "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "VTE_VERSION"))
+        .filter(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "TERM" | "COLORTERM" | "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "VTE_VERSION"
+            )
+        })
         .collect();
     let mut set = |key: &str, value: &str| {
         env.retain(|(k, _)| k != key);
@@ -75,9 +84,19 @@ mod tests {
             ("DISPLAY".into(), ":0".into()),
             ("OMUX_CODEX_TOKEN".into(), "stale".into()),
         ];
-        let env = build_from(inherited, Extra { codex_token: None, repo: Some("/src/app") });
+        let env = build_from(
+            inherited,
+            Extra {
+                codex_token: None,
+                repo: Some("/src/app"),
+            },
+        );
         assert_eq!(get(&env, "CLAUDECODE"), None);
-        assert_eq!(get(&env, "OMUX_CODEX_TOKEN"), None, "a token never leaks between sessions");
+        assert_eq!(
+            get(&env, "OMUX_CODEX_TOKEN"),
+            None,
+            "a token never leaks between sessions"
+        );
         assert_eq!(get(&env, "DISPLAY"), Some(":0"));
         assert_eq!(get(&env, "TERM"), Some("xterm-256color"));
         assert_eq!(get(&env, "TERM_PROGRAM"), Some("omux"));

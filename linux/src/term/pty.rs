@@ -198,7 +198,11 @@ pub fn passwd_shell() -> Option<String> {
             return None;
         }
         let shell = std::ffi::CStr::from_ptr((*pw).pw_shell);
-        shell.to_str().ok().filter(|s| !s.is_empty()).map(str::to_string)
+        shell
+            .to_str()
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
     }
 }
 
