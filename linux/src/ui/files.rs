@@ -169,8 +169,8 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
                 }
             });
             rebuild();
-        } else if let Some(app) = app() {
-            preview(&app, &path);
+        } else if let Some(app) = crate::ui::files::app() {
+            crate::ui::files::preview(&app, &path);
         }
     });
     row_menu(&list);
@@ -183,8 +183,8 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
         let Some(path) = list.files().first().and_then(|f| f.path()) else {
             return false;
         };
-        if let Some(app) = app() {
-            preview(&app, &path);
+        if let Some(app) = crate::ui::files::app() {
+            crate::ui::files::preview(&app, &path);
         }
         true
     });
