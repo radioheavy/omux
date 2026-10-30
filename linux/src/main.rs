@@ -6,6 +6,7 @@ mod actions;
 mod app;
 mod claude;
 mod codex;
+mod codex_client;
 mod model;
 mod notify;
 mod persistence;
