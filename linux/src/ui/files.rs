@@ -434,7 +434,7 @@ fn row(
     let icon = if is_dir {
         gtk::Image::from_icon_name("folder-symbolic")
     } else {
-        let (content_type, _) = gio::content_type_guess(Some(path), &[]);
+        let (content_type, _) = gio::content_type_guess(Some(path), None::<&[u8]>);
         gtk::Image::from_gicon(&gio::content_type_get_symbolic_icon(&content_type))
     };
     hbox.append(&icon);
