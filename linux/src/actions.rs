@@ -157,7 +157,7 @@ pub fn install(app: &Rc<App>) {
             }
         });
     });
-    add(app, "open-recent", |app| crate::ui::recent::present(app));
+    add(app, "open-recent", crate::ui::recent::present);
 
     // The selected session
     add(app, "close-session", |app| {
@@ -257,7 +257,7 @@ pub fn install(app: &Rc<App>) {
 
     // Sidebar menus: sessions
     add_id(app, "tab-rename", rename_tab);
-    add_id(app, "tab-edit", |app, id| dialogs::edit_session(app, id));
+    add_id(app, "tab-edit", dialogs::edit_session);
     add_pair(app, "tab-color", |app, id, raw| {
         let color = TabColor::ALL
             .into_iter()
