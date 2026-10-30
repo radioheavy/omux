@@ -36,12 +36,13 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 fonts-dejavu-core
           mkdir -p "$RUNNER_TEMP/ws" "$RUNNER_TEMP/shots"
           cp -r tests/fixtures/workspace/. "$RUNNER_TEMP/ws/" 2>/dev/null || true
-          export OMUX_WORKSPACE_DIRECTORY="$RUNNER_TEMP/ws" GSK_RENDERER=cairo
+          export OMUX_WORKSPACE_DIRECTORY="$RUNNER_TEMP/ws" GSK_RENDERER=cairo RUST_BACKTRACE=1
           xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh -c '
-            ./target/release/omux & pid=$!
+            ./target/release/omux > "$RUNNER_TEMP/shots/omux.log" 2>&1 & pid=$!
             sleep 6
             import -window root "$RUNNER_TEMP/shots/main.png"
             kill $pid || true'
+          cat "$RUNNER_TEMP/shots/omux.log"
       - uses: actions/upload-artifact@v4
         with:
           name: omux-linux-x86_64

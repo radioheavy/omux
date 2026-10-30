@@ -26,7 +26,7 @@ use crate::ui::window::Ui;
 pub struct App {
     pub gtk_app: adw::Application,
     pub ui: Ui,
-    pub ws: RefCell<Workspace>,
+    pub ws: Rc<RefCell<Workspace>>,
     pub settings: RefCell<Settings>,
     pub runtime: RefCell<HashMap<Uuid, TabRuntime>>,
     pub terminals: RefCell<HashMap<Uuid, Rc<SessionTerminal>>>,
@@ -54,7 +54,7 @@ impl App {
         let app = Rc::new(Self {
             gtk_app: gtk_app.clone(),
             ui,
-            ws: RefCell::new(ws),
+            ws: Rc::new(RefCell::new(ws)),
             settings: RefCell::new(settings),
             runtime: RefCell::new(HashMap::new()),
             terminals: RefCell::new(HashMap::new()),
