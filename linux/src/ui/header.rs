@@ -11,7 +11,9 @@ use crate::model::SessionProvider;
 use crate::persistence::abbreviate_home;
 
 pub struct Header {
-    pub bar: adw::HeaderBar,
+    /// A custom bar (not AdwHeaderBar, which centers its title) so the
+    /// session's name and status sit at the left, as on the Mac.
+    pub bar: gtk::WindowHandle,
     dot: gtk::Box,
     name: gtk::Label,
     provider: gtk::Label,
@@ -27,14 +29,15 @@ pub struct Header {
 
 impl Header {
     pub fn build() -> Self {
-        let bar = adw::HeaderBar::new();
-        bar.add_css_class("omux-chrome");
-        bar.set_show_start_title_buttons(false);
-        bar.set_centering_policy(adw::CenteringPolicy::Loose);
+        let bar = gtk::WindowHandle::new();
+        bar.add_css_class("omux-chrome-bar");
+        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        outer.set_margin_start(12);
+        outer.set_margin_end(6);
+        bar.set_child(Some(&outer));
 
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_hexpand(true);
-        row.set_margin_start(6);
         let dot = dot();
         row.append(&dot);
         let name = gtk::Label::new(None);
@@ -80,17 +83,26 @@ impl Header {
         cwd.set_max_width_chars(40);
         row.append(&cwd);
 
-        bar.set_title_widget(Some(&row));
+        outer.append(&row);
 
         let panel_toggle = gtk::ToggleButton::builder()
             .icon_name("sidebar-show-right-symbolic")
             .tooltip_text("Files panel (F9)")
             .action_name("app.toggle-panel")
             .build();
-        bar.pack_end(&panel_toggle);
+        panel_toggle.add_css_class("flat");
         let start_stop = gtk::Button::from_icon_name("media-playback-start-symbolic");
         start_stop.set_action_name(Some("app.start-or-stop"));
-        bar.pack_end(&start_stop);
+        start_stop.add_css_class("flat");
+        for widget in [
+            start_stop.upcast_ref::<gtk::Widget>(),
+            panel_toggle.upcast_ref(),
+        ] {
+            widget.set_valign(gtk::Align::Center);
+            outer.append(widget);
+        }
+        let controls = gtk::WindowControls::new(gtk::PackType::End);
+        outer.append(&controls);
 
         Self {
             bar,

@@ -57,7 +57,8 @@ fn css(theme: &Theme) -> String {
 .omux-sidebar, .omux-sidebar list, headerbar.omux-chrome, .omux-panel-strip {{
   background-color: {chrome};
 }}
-headerbar.omux-chrome {{ box-shadow: none; border-bottom: 1px solid alpha(currentColor, 0.08); min-height: 38px; }}
+headerbar.omux-chrome, .omux-chrome-bar {{ box-shadow: none; border-bottom: 1px solid alpha(currentColor, 0.08); min-height: 46px; }}
+.omux-chrome-bar {{ background-color: {chrome}; }}
 .omux-terminal-bg, .omux-panel {{ background-color: {bg}; color: {fg}; }}
 .omux-sidebar list row {{ padding: 0; border-radius: 6px; margin: 0 6px; }}
 .omux-sidebar list row:selected {{ background-color: alpha(currentColor, 0.12); color: inherit; }}

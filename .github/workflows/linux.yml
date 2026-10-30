@@ -39,8 +39,12 @@ jobs:
           export OMUX_WORKSPACE_DIRECTORY="$RUNNER_TEMP/ws" GSK_RENDERER=cairo RUST_BACKTRACE=1
           xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh -c '
             ./target/release/omux > "$RUNNER_TEMP/shots/omux.log" 2>&1 & pid=$!
-            sleep 6
+            sleep 7
             import -window root "$RUNNER_TEMP/shots/main.png"
+            act() { gdbus call --session --dest net.pf1.omux --object-path /net/pf1/omux \
+              --method org.gtk.Actions.Activate "$1" "[]" "{}" > /dev/null; sleep 2; }
+            act settings
+            import -window root "$RUNNER_TEMP/shots/settings.png"
             kill $pid || true'
           cat "$RUNNER_TEMP/shots/omux.log"
       - uses: actions/upload-artifact@v4
