@@ -195,6 +195,7 @@ pub fn install(app: &Rc<App>) {
         with_selected(app, |id| app.answer_permission(id, false))
     });
     add(app, "quick-switch", dialogs::quick_switcher);
+    add(app, "refresh-sidebar", |app| app.refresh_sidebar());
     add(app, "next-session", |app| app.select_relative(1));
     add(app, "prev-session", |app| app.select_relative(-1));
     for n in 1..=9 {

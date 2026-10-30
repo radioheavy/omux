@@ -18,3 +18,6 @@ pub fn request_close(app: &Rc<App>, id: Uuid) {
 }
 
 pub fn install(_app: &Rc<App>) {}
+
+/// Branch and pull request chips in the session header.
+pub fn header_chips(_app: &App, _id: Uuid, _container: &gtk::Box) {}
