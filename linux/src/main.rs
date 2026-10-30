@@ -1,7 +1,3 @@
-// The port is being built up milestone by milestone (docs/ROADMAP.md); parts
-// of the core are not wired into the UI yet.
-#![allow(dead_code)]
-
 mod actions;
 mod app;
 mod claude;

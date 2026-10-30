@@ -3,7 +3,7 @@ name = "omux"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-description = "Linux port of omux: a terminal for running Claude Code and Codex sessions side by side"
+description = "Run many Claude Code and Codex sessions side by side"
 license = "MIT"
 repository = "https://github.com/onurozcan/omux"
 

@@ -30,6 +30,14 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Codex app-server integration test (real codex CLI, no model calls)
+        run: |
+          npm install -g @openai/codex
+          codex --version
+          OMUX_CODEX_INTEGRATION=1 cargo test -- --ignored real_server_persists_and_resumes_exact_thread
       - run: cargo build --release
       - name: Validate desktop entry and metainfo
         run: |
