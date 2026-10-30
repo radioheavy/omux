@@ -293,7 +293,7 @@ impl App {
 
     fn remove_terminal(&self, id: Uuid) {
         if let Some(terminal) = self.terminals.borrow_mut().remove(&id) {
-            terminal.kill();
+            terminal.dispose();
             self.ui.remove_terminal(&terminal);
         }
     }

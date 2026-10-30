@@ -48,6 +48,8 @@ pub struct SessionTerminal {
     status: RefCell<Store>,
     size: Cell<(i64, i64)>,
     handler: RefCell<Option<Handler>>,
+    /// Popovers parented to the terminal; unparented before it goes away.
+    popovers: RefCell<Vec<gtk::Popover>>,
 }
 
 impl SessionTerminal {
@@ -66,6 +68,7 @@ impl SessionTerminal {
             status: RefCell::new(Store::default()),
             size: Cell::new((0, 0)),
             handler: RefCell::new(None),
+            popovers: RefCell::new(Vec::new()),
         });
 
         let weak = Rc::downgrade(&this);
@@ -123,6 +126,19 @@ impl SessionTerminal {
         });
 
         this
+    }
+
+    pub fn add_popover(&self, popover: &impl IsA<gtk::Popover>) {
+        popover.set_parent(&self.widget);
+        self.popovers.borrow_mut().push(popover.clone().upcast());
+    }
+
+    /// Kills the process and detaches child widgets before the terminal is dropped.
+    pub fn dispose(&self) {
+        self.kill();
+        for popover in self.popovers.borrow_mut().drain(..) {
+            popover.unparent();
+        }
     }
 
     pub fn set_handler(&self, handler: impl Fn(TermEvent) + 'static) {

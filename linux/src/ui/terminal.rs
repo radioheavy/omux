@@ -23,7 +23,7 @@ pub fn configure(app: &Rc<App>, id: Uuid, terminal: &Rc<SessionTerminal>) {
     menu.append(Some("Select All"), Some("app.select-all"));
     let popover = gtk::PopoverMenu::from_model(Some(&menu));
     popover.set_has_arrow(false);
-    popover.set_parent(&terminal.widget);
+    terminal.add_popover(&popover);
     let click = gtk::GestureClick::new();
     click.set_button(3);
     click.connect_pressed(move |gesture, _, x, y| {

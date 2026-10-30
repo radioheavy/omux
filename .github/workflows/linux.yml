@@ -33,7 +33,7 @@ jobs:
       - run: cargo build --release
       - name: Screenshot under Xvfb
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 fonts-dejavu-core adwaita-icon-theme-full || sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 fonts-dejavu-core adwaita-icon-theme
           mkdir -p "$RUNNER_TEMP/ws" "$RUNNER_TEMP/shots"
           cp -r tests/fixtures/workspace/. "$RUNNER_TEMP/ws/" 2>/dev/null || true
           export OMUX_WORKSPACE_DIRECTORY="$RUNNER_TEMP/ws" GSK_RENDERER=cairo RUST_BACKTRACE=1
