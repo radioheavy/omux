@@ -136,10 +136,8 @@ impl Scanner {
                     events.push(event);
                 }
             }
-            b"133" => {
-                if payload == b"A" || payload.starts_with(b"A;") {
-                    events.push(Event::PromptStart);
-                }
+            b"133" if payload == b"A" || payload.starts_with(b"A;") => {
+                events.push(Event::PromptStart);
             }
             _ => {}
         }

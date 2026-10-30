@@ -4,10 +4,12 @@
 
 mod model;
 mod persistence;
+mod runtime;
 mod session_env;
 mod settings;
 mod swift_json;
 mod term;
+mod theme;
 
 use adw::prelude::*;
 use gtk::glib;

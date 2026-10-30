@@ -74,7 +74,11 @@ pub const THEMES: [Theme; 11] = [
 
 impl Theme {
     pub fn named(raw: &str) -> Theme {
-        THEMES.iter().copied().find(|t| t.raw == raw).unwrap_or(THEMES[1])
+        THEMES
+            .iter()
+            .copied()
+            .find(|t| t.raw == raw)
+            .unwrap_or(THEMES[1])
     }
 }
 

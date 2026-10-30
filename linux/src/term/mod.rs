@@ -40,12 +40,14 @@ pub enum TermEvent {
     Exited,
 }
 
+type Handler = Rc<dyn Fn(TermEvent)>;
+
 pub struct SessionTerminal {
     pub widget: vte::Terminal,
     pty: RefCell<Option<Pty>>,
     status: RefCell<Store>,
     size: Cell<(i64, i64)>,
-    handler: RefCell<Option<Rc<dyn Fn(TermEvent)>>>,
+    handler: RefCell<Option<Handler>>,
 }
 
 impl SessionTerminal {
