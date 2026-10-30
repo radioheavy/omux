@@ -85,7 +85,7 @@ pub fn recent_sessions() -> Vec<RecentSession> {
             Some((p, date))
         })
         .collect();
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|a| std::cmp::Reverse(a.1));
     files.truncate(300);
     files
         .into_iter()
@@ -582,7 +582,7 @@ mod tests {
         write!(file, "{{\"a\":1}}\n{{\"b\":").unwrap();
         let mut reader = JsonlReader::default();
         assert_eq!(reader.read(&path), vec![json!({"a": 1})]);
-        write!(file, "2}}\n").unwrap();
+        writeln!(file, "2}}").unwrap();
         assert_eq!(reader.read(&path), vec![json!({"b": 2})]);
         assert!(reader.read(&path).is_empty());
     }
