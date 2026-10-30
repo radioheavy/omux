@@ -101,8 +101,12 @@ fn read_text(path: &Path) -> Option<String> {
 pub fn view(app: &Rc<App>, path: &Path, wrap: bool) -> gtk::Widget {
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let kind = kind(path);
+    // Markdown is rendered at any size, as on the Mac; text only under 1 MB.
     let text = match kind {
-        Kind::Text | Kind::Markdown => read_text(path),
+        Kind::Text => read_text(path),
+        Kind::Markdown => std::fs::read(path)
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok()),
         _ => None,
     };
     let textual = text.is_some();

@@ -270,6 +270,8 @@ pub fn selection_changed(app: &Rc<App>) {
         f.root = root.clone();
         f.expanded.clear();
         f.mentioned.clear();
+        // Another session's file or transcript doesn't stay on screen.
+        f.selected = None;
         f.root_label.set_text(
             &root
                 .as_ref()
@@ -281,6 +283,7 @@ pub fn selection_changed(app: &Rc<App>) {
     })
     .unwrap_or(false);
     if changed {
+        set_preview(&placeholder());
         rebuild();
     }
     scan_mentions(app);
@@ -302,12 +305,18 @@ fn terminal_text(app: &App, id: Uuid) -> Option<String> {
 
 fn scan_mentions(app: &Rc<App>) {
     let Some(id) = app.selected.get() else { return };
-    let Some(text) = terminal_text(app, id) else {
-        return;
-    };
+    let text = terminal_text(app, id).unwrap_or_default();
+    let weak = Rc::downgrade(app);
     crate::ui::panel::background(
         move || crate::mentions::paths(&text),
-        |paths| {
+        move |paths| {
+            // The user may have switched sessions while this ran.
+            if weak
+                .upgrade()
+                .is_none_or(|app| app.selected.get() != Some(id))
+            {
+                return;
+            }
             let changed = with(|f| {
                 if f.mentioned == paths {
                     return false;
@@ -421,21 +430,12 @@ fn row(
     arrow.set_pixel_size(12);
     arrow.set_opacity(if is_dir { 0.5 } else { 0.0 });
     hbox.append(&arrow);
-    let icon = match gio::File::for_path(path)
-        .query_info(
-            "standard::symbolic-icon",
-            gio::FileQueryInfoFlags::NONE,
-            gio::Cancellable::NONE,
-        )
-        .ok()
-        .and_then(|i| i.symbolic_icon())
-    {
-        Some(gicon) => gtk::Image::from_gicon(&gicon),
-        None => gtk::Image::from_icon_name(if is_dir {
-            "folder-symbolic"
-        } else {
-            "text-x-generic-symbolic"
-        }),
+    // Guessed from the name: asking GIO about each file would read it.
+    let icon = if is_dir {
+        gtk::Image::from_icon_name("folder-symbolic")
+    } else {
+        let (content_type, _) = gio::content_type_guess(Some(path), &[]);
+        gtk::Image::from_gicon(&gio::content_type_get_symbolic_icon(&content_type))
     };
     hbox.append(&icon);
     let text = label.unwrap_or_else(|| name_of(path));

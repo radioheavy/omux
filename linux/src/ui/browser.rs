@@ -59,6 +59,15 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
             pages: HashMap::new(),
         })
     });
+    // A server the session prints after the tab opened still opens by itself.
+    let weak = Rc::downgrade(app);
+    glib::timeout_add_local(std::time::Duration::from_secs(4), move || {
+        let Some(app) = weak.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        selection_changed(&app);
+        glib::ControlFlow::Continue
+    });
     stack.upcast()
 }
 
@@ -263,6 +272,7 @@ fn build_page(id: Uuid) -> Page {
                 "Click an element to add it to the session prompt. Esc cancels.",
             );
         } else {
+            hide_notice(id);
             w.evaluate_javascript(
                 "window.__omuxPick && window.__omuxPick.stop()",
                 None,
@@ -272,6 +282,25 @@ fn build_page(id: Uuid) -> Page {
             );
         }
     });
+    // Single-page apps change the address without a load (pushState).
+    web.connect_uri_notify(move |web| {
+        let Some(page) =
+            BROWSER.with(|b| b.borrow().as_ref().and_then(|b| b.pages.get(&id).cloned()))
+        else {
+            return;
+        };
+        let page = page.borrow();
+        if let Some(uri) = web.uri() {
+            if !page.address.has_focus() {
+                page.address.set_text(&uri);
+            }
+        }
+        page.back.set_sensitive(web.can_go_back());
+        page.forward.set_sensitive(web.can_go_forward());
+    });
+    let notice_click = gtk::GestureClick::new();
+    notice_click.connect_released(move |_, _, _, _| hide_notice(id));
+    notice.add_controller(notice_click);
     web.connect_load_changed(move |web, event| {
         let Some(page) =
             BROWSER.with(|b| b.borrow().as_ref().and_then(|b| b.pages.get(&id).cloned()))
@@ -345,12 +374,15 @@ pub fn load(id: Uuid, text: &str) {
     let page = page(id);
     let page = page.borrow_mut();
     let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
     let uri = if text.contains("://") {
         text.to_string()
     } else {
         format!("http://{text}")
     };
-    if glib::Uri::parse(&uri, glib::UriFlags::NONE).is_err() || text.is_empty() {
+    if glib::Uri::parse(&uri, glib::UriFlags::NONE).is_err() {
         page.banner.set_title("That isn't a valid address.");
         page.banner.set_button_label(None);
         page.banner.set_revealed(true);
@@ -361,19 +393,22 @@ pub fn load(id: Uuid, text: &str) {
     page.web.load_uri(&uri);
 }
 
+fn hide_notice(id: Uuid) {
+    if let Some(page) =
+        BROWSER.with(|b| b.borrow().as_ref().and_then(|b| b.pages.get(&id).cloned()))
+    {
+        page.borrow().notice.set_reveal_child(false);
+    }
+}
+
 fn show_notice(id: Uuid, text: &str) {
     if let Some(page) =
         BROWSER.with(|b| b.borrow().as_ref().and_then(|b| b.pages.get(&id).cloned()))
     {
         let page = page.borrow();
+        // Stays until clicked away or replaced, as on the Mac.
         page.notice_label.set_text(text);
         page.notice.set_reveal_child(true);
-        let notice = page.notice.downgrade();
-        glib::timeout_add_local_once(std::time::Duration::from_secs(4), move || {
-            if let Some(n) = notice.upgrade() {
-                n.set_reveal_child(false);
-            }
-        });
     }
 }
 

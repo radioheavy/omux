@@ -143,6 +143,21 @@ fn poll_pulls(app: &Rc<App>) {
         move |results| {
             POLLING.with(|p| *p.borrow_mut() = false);
             let Some(app) = weak.upgrade() else { return };
+            // Sessions no longer polled (closed, folder gone) drop their state.
+            let polled: Vec<Uuid> = results.iter().map(|(id, _)| *id).collect();
+            let stale: Vec<Uuid> = PULLS.with(|p| {
+                let mut p = p.borrow_mut();
+                let stale = p
+                    .keys()
+                    .filter(|id| !polled.contains(id))
+                    .copied()
+                    .collect();
+                p.retain(|id, _| polled.contains(id));
+                stale
+            });
+            for id in stale {
+                app.refresh_session(id);
+            }
             for (id, fetch) in results {
                 let old = pull(id);
                 match fetch {
@@ -502,7 +517,12 @@ fn pr_popover(id: Uuid, pr: &PullRequest) -> gtk::Popover {
     facts.add_css_class("omux-status");
     facts.set_xalign(0.0);
     vbox.append(&facts);
-    if !pr.checks.is_empty() {
+    if pr.checks.is_empty() {
+        let none = gtk::Label::new(Some("No checks"));
+        none.add_css_class("omux-status");
+        none.set_xalign(0.0);
+        vbox.append(&none);
+    } else {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
         for check in &pr.checks {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -537,10 +557,15 @@ fn pr_popover(id: Uuid, pr: &PullRequest) -> gtk::Popover {
             .build();
         vbox.append(&scroller);
     }
+    let popover = gtk::Popover::new();
     let open = gtk::Button::with_label("Open on GitHub");
     let url = pr.url.clone();
+    let pop = popover.downgrade();
     open.connect_clicked(move |_| {
         let _ = gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE);
+        if let Some(p) = pop.upgrade() {
+            p.popdown();
+        }
     });
     vbox.append(&open);
     if pr.state == PrState::Merged {
@@ -548,9 +573,14 @@ fn pr_popover(id: Uuid, pr: &PullRequest) -> gtk::Popover {
         delete.add_css_class("destructive-action");
         delete.set_action_name(Some("app.wt-cleanup"));
         delete.set_action_target_value(Some(&id.to_string().to_variant()));
+        let pop = popover.downgrade();
+        delete.connect_clicked(move |_| {
+            if let Some(p) = pop.upgrade() {
+                p.popdown();
+            }
+        });
         vbox.append(&delete);
     }
-    let popover = gtk::Popover::new();
     popover.set_child(Some(&vbox));
     popover
 }

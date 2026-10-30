@@ -950,7 +950,8 @@ impl App {
             .position(|g| g.id == before)
             .unwrap_or(ws.groups.len());
         let group = ws.groups.remove(from);
-        ws.groups.insert(to.min(ws.groups.len()), group);
+        let len = ws.groups.len();
+        ws.groups.insert(to.min(len), group);
         drop(ws);
         self.schedule_save();
         self.refresh_sidebar();

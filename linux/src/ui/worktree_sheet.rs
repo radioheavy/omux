@@ -108,6 +108,23 @@ pub fn present(app: &Rc<App>, group_id: Uuid, provider: Option<SessionProvider>)
     view.set_content(Some(&page));
     dialog.set_child(Some(&view));
 
+    // The setup command and the preference are saved as they change, even
+    // if the sheet is cancelled, as on the Mac.
+    let weak = Rc::downgrade(app);
+    setup.connect_changed(move |row| {
+        let text = row.text().trim().to_string();
+        if let Some(app) = weak.upgrade() {
+            app.update_group(group_id, |g| g.worktree_setup = text);
+        }
+    });
+    let weak = Rc::downgrade(app);
+    remember.connect_active_notify(move |row| {
+        let on = row.is_active();
+        if let Some(app) = weak.upgrade() {
+            app.update_group(group_id, |g| g.use_worktrees = on);
+        }
+    });
+
     // The branch follows the name until the user edits it.
     let branch_edited = Rc::new(Cell::new(false));
     let syncing = Rc::new(Cell::new(false));

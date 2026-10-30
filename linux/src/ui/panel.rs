@@ -147,11 +147,13 @@ pub fn root_for(app: &App, id: Uuid) -> Option<PathBuf> {
 }
 
 pub fn selection_changed(app: &Rc<App>) {
+    // Changes follows the session even while hidden: the branch chip and
+    // the tab badge use its totals.
+    crate::ui::changes::selection_changed(app);
     if !app.settings.borrow().show_files {
         return;
     }
     crate::ui::files::selection_changed(app);
-    crate::ui::changes::selection_changed(app);
     crate::ui::browser::selection_changed(app);
 }
 
@@ -170,9 +172,9 @@ pub fn preview_file(app: &Rc<App>, path: &Path) {
     crate::ui::files::preview(app, path);
 }
 
-pub fn show_transcript(_id: Uuid, agent: &SubAgent) {
+pub fn show_transcript(id: Uuid, agent: &SubAgent) {
     let app = crate::ui::files::app();
-    if let Some(app) = app {
+    if let Some(app) = app.filter(|a| a.selected.get() == Some(id)) {
         show_tab(&app, "files");
         crate::ui::files::show_transcript(&app, agent);
     }

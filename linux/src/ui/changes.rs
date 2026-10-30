@@ -7,7 +7,7 @@
 //! repository (node_modules included) can run out of watches.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
@@ -21,8 +21,42 @@ use crate::git::{self, ChangedFile, DiffKind, DiffLine};
 use crate::model::SessionProvider;
 use crate::ui::panel::background;
 
-/// A review note on a diff row: (file path, row index) → (line number, text).
-type Notes = BTreeMap<(String, usize), (Option<usize>, String)>;
+type NoteKey = (String, usize);
+type Note = (Option<usize>, String);
+
+/// Review notes by (file path, diff row) → (line number, text), in the
+/// order they were written: an edited note moves to the end, as on the Mac,
+/// which is the order the agent receives them in.
+#[derive(Clone, Default)]
+struct Notes(Vec<(NoteKey, Note)>);
+
+impl Notes {
+    fn get(&self, key: &NoteKey) -> Option<&Note> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+    fn contains_key(&self, key: &NoteKey) -> bool {
+        self.get(key).is_some()
+    }
+    fn insert(&mut self, key: NoteKey, note: Note) {
+        self.remove(&key);
+        self.0.push((key, note));
+    }
+    fn remove(&mut self, key: &NoteKey) {
+        self.0.retain(|(k, _)| k != key);
+    }
+    fn keys(&self) -> impl Iterator<Item = &NoteKey> {
+        self.0.iter().map(|(k, _)| k)
+    }
+    fn iter(&self) -> impl Iterator<Item = &(NoteKey, Note)> {
+        self.0.iter()
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 struct Changes {
     app: Weak<App>,
@@ -35,6 +69,8 @@ struct Changes {
     diff: Vec<DiffLine>,
     notes: HashMap<Uuid, Notes>,
     refreshing: bool,
+    /// A refresh was asked for while one ran; run once more when it ends.
+    again: bool,
     /// Push or merge in progress: shown instead of the footer buttons.
     activity: HashMap<Uuid, String>,
     stack: gtk::Stack,
@@ -152,6 +188,7 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
             diff: Vec::new(),
             notes: HashMap::new(),
             refreshing: false,
+            again: false,
             activity: HashMap::new(),
             stack: stack.clone(),
             diff_view: diff_view.clone(),
@@ -227,15 +264,17 @@ pub fn app_activated(_app: &Rc<App>) {
 
 /// Reloads the file list (and the open diff) off the main thread.
 pub fn refresh() {
+    // One refresh at a time; one asked for meanwhile runs when it ends.
     let Some((dir, worktree_base)) = with(|c| {
         if c.refreshing {
+            c.again = true;
             return None;
         }
+        let dir = c.dir.clone()?;
         c.refreshing = true;
-        Some((c.dir.clone()?, c.base.clone()))
+        Some((dir, c.base.clone()))
     })
     .flatten() else {
-        with(|c| c.refreshing = false);
         return;
     };
     background(
@@ -248,9 +287,16 @@ pub fn refresh() {
             let files = git::changed_files(&dir, base.as_deref());
             (dir, true, base, files)
         },
-        |(dir, repo, base, files)| {
-            let changed = with(|c| {
+        |(dir, repo, _base, files)| {
+            let again = with(|c| {
                 c.refreshing = false;
+                std::mem::replace(&mut c.again, false)
+            })
+            .unwrap_or(false);
+            if again {
+                glib::idle_add_local_once(refresh);
+            }
+            let changed = with(|c| {
                 if c.dir.as_deref() != Some(dir.as_path()) {
                     return false;
                 }
@@ -265,7 +311,6 @@ pub fn refresh() {
                 if !keep {
                     c.selected = c.files.first().map(|f| f.path.clone());
                 }
-                let _ = base;
                 changed
             })
             .unwrap_or(false);
@@ -357,10 +402,17 @@ fn render_list() {
             icon.add_css_class("omux-yellow");
             hbox.append(&icon);
         }
+        // Zero counts are left out, as on the Mac.
         let counts = match (file.added, file.removed) {
-            (Some(a), Some(r)) => format!("+{a} −{r}"),
-            (Some(a), None) => format!("+{a}"),
-            _ => "binary".into(),
+            (None, _) => "binary".to_string(),
+            (Some(a), r) => [
+                (a > 0).then(|| format!("+{a}")),
+                r.filter(|r| *r > 0).map(|r| format!("−{r}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" "),
         };
         let counts = gtk::Label::new(Some(&counts));
         counts.add_css_class("omux-status");

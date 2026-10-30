@@ -130,7 +130,13 @@ pub fn render(source: &str, wrap: bool) -> gtk::TextView {
                 active.retain(|t| t != "codeblock");
                 block_end(&buffer, &mut end);
             }
-            Event::Start(Tag::List(start)) => lists.push(start),
+            Event::Start(Tag::List(start)) => {
+                // A nested list starts on its own line.
+                if !end.starts_line() {
+                    buffer.insert(&mut end, "\n");
+                }
+                lists.push(start);
+            }
             Event::End(TagEnd::List(_)) => {
                 lists.pop();
                 if lists.is_empty() {
@@ -146,13 +152,23 @@ pub fn render(source: &str, wrap: bool) -> gtk::TextView {
                     }
                     _ => "• ".to_string(),
                 };
+                if !end.starts_line() {
+                    buffer.insert(&mut end, "\n");
+                }
                 insert(&buffer, &mut end, &marker, &tags_now);
             }
-            Event::End(TagEnd::Item) => buffer.insert(&mut end, "\n"),
+            Event::End(TagEnd::Item) => {
+                if !end.starts_line() {
+                    buffer.insert(&mut end, "\n");
+                }
+            }
             Event::End(TagEnd::Paragraph) => {
                 if lists.is_empty() {
                     buffer.insert(&mut end, "\n");
                     block_end(&buffer, &mut end);
+                } else if !end.starts_line() {
+                    // Paragraphs of a loose list item stay separate lines.
+                    buffer.insert(&mut end, "\n");
                 }
             }
             Event::Text(text) => insert(&buffer, &mut end, &text, &tags_now),
