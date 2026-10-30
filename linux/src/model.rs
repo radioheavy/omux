@@ -17,8 +17,6 @@ pub enum SessionProvider {
 }
 
 impl SessionProvider {
-    pub const ALL: [SessionProvider; 4] = [Self::Claude, Self::Codex, Self::Shell, Self::Custom];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Claude => "Claude Code",

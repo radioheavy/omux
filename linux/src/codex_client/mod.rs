@@ -307,6 +307,7 @@ impl TabClient {
 
     /// Like `new`, but the server runs with exactly this environment
     /// (tests use it for a temporary `CODEX_HOME`).
+    #[cfg(test)]
     pub fn with_env(env: HashMap<String, String>) -> Self {
         Self::build(Some(env))
     }
@@ -412,12 +413,9 @@ impl TabClient {
         self.tab.conn.is_ready()
     }
 
+    #[cfg(test)]
     pub fn thread_id(&self) -> Option<String> {
         lock(&self.tab.state).proto.root().map(str::to_string)
-    }
-
-    pub fn agents(&self) -> Vec<CodexAgent> {
-        lock(&self.tab.state).proto.agents().to_vec()
     }
 
     /// First pending approval of the root, else of any subagent.
@@ -511,11 +509,6 @@ impl TabClient {
             json!({"threadId": thread_id, "limit": 100, "sortDirection": "desc"}),
         )?;
         Ok(format_transcript(&result))
-    }
-
-    /// Blocking full usage read over this tab's connection.
-    pub fn usage(&self) -> Result<CodexUsage, CodexError> {
-        read_usage(&self.tab.conn)
     }
 
     /// Non-blocking. Stops the server (SIGTERM), fails pending requests and

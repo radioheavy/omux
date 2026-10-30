@@ -186,7 +186,7 @@ impl SessionTerminal {
                         this.widget.feed(&bytes);
                         this.handle(events);
                     }
-                    Output::Exited(_) => {
+                    Output::Exited => {
                         // A restart replaced this process; only the current one reports.
                         let current = this.pty.borrow().as_ref().map(Pty::pid) == Some(pid);
                         if current {
@@ -253,14 +253,6 @@ impl SessionTerminal {
     pub fn kill(&self) {
         if let Some(pty) = self.pty.borrow_mut().take() {
             pty.kill_tree();
-        }
-    }
-
-    /// Clears records after the user has seen a result, like SwiftTerm's
-    /// `clearProgramStatus`.
-    pub fn clear_status(&self) {
-        if self.status.borrow_mut().clear("") {
-            self.emit_status();
         }
     }
 }

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::app::App;
 use crate::model::SessionProvider;
-use crate::persistence::{abbreviate_home, expand_tilde};
+use crate::persistence::abbreviate_home;
 
 /// A dialog with Cancel / primary buttons in its header and `page` as content.
 fn form(title: &str, primary: &str, page: &adw::PreferencesPage) -> (adw::Dialog, gtk::Button) {
@@ -487,9 +487,4 @@ pub fn quick_switcher(app: &Rc<App>) {
     search.add_controller(keys);
     dialog.present(Some(&app.ui.window));
     search.grab_focus();
-}
-
-/// `~`-expanded check used by sheets.
-pub fn is_dir(text: &str) -> bool {
-    expand_tilde(text).is_dir()
 }

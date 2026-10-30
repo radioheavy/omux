@@ -27,7 +27,6 @@ pub struct Sidebar {
 struct SessionRow {
     row: gtk::ListBoxRow,
     dot: gtk::Box,
-    name_stack: gtk::Stack,
     name: gtk::Label,
     status: gtk::Label,
     permission: gtk::Box,
@@ -446,7 +445,6 @@ fn session_row(app: &Rc<App>, tab: &TabItem) -> SessionRow {
     SessionRow {
         row,
         dot,
-        name_stack,
         name,
         status,
         permission,

@@ -15,7 +15,7 @@ use super::osc::{Event, Scanner};
 /// What the reader thread reports to the main loop.
 pub enum Output {
     Bytes(Vec<u8>, Vec<Event>),
-    Exited(Option<i32>),
+    Exited,
 }
 
 pub struct Pty {
@@ -174,8 +174,10 @@ fn read_loop(master: Arc<File>, child: Arc<Mutex<Child>>, sink: async_channel::S
             Err(_) => break,
         }
     }
-    let status = child.lock().ok().and_then(|mut c| c.wait().ok());
-    let _ = sink.send_blocking(Output::Exited(status.and_then(|s| s.code())));
+    if let Ok(mut child) = child.lock() {
+        let _ = child.wait();
+    }
+    let _ = sink.send_blocking(Output::Exited);
 }
 
 /// The login name for `USER`/`LOGNAME` when the environment lacks them.
@@ -233,10 +235,7 @@ mod tests {
                     text.extend(bytes);
                     saw_status |= events.iter().any(|e| matches!(e, Event::Status(_)));
                 }
-                Output::Exited(code) => {
-                    assert_eq!(code, Some(3));
-                    break;
-                }
+                Output::Exited => break,
             }
         }
         assert!(String::from_utf8_lossy(&text).contains("hi"));

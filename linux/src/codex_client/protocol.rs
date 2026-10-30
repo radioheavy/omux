@@ -227,6 +227,7 @@ impl Protocol {
         self.root.as_deref()
     }
 
+    #[cfg(test)]
     pub fn agents(&self) -> &[CodexAgent] {
         &self.agents
     }
