@@ -33,19 +33,33 @@ pub fn shell_escaped(paths: &[String]) -> String {
         .join(" ")
 }
 
+/// Files dropped on the terminal paste as paths; image data dropped from a
+/// browser or an image viewer is saved and its path pasted, as on the Mac.
 pub fn install(_app: &Rc<App>, _id: Uuid, terminal: &Rc<SessionTerminal>) {
-    let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+    let target = gtk::DropTarget::new(glib::Type::INVALID, gdk::DragAction::COPY);
+    target.set_types(&[gdk::FileList::static_type(), gdk::Texture::static_type()]);
     let weak = Rc::downgrade(terminal);
     target.connect_drop(move |_, value, _, _| {
-        let (Some(term), Ok(list)) = (weak.upgrade(), value.get::<gdk::FileList>()) else {
+        let Some(term) = weak.upgrade() else {
             return false;
         };
-        let paths = file_paths(&list);
-        if paths.is_empty() {
-            return false;
-        }
+        let text = if let Ok(list) = value.get::<gdk::FileList>() {
+            let paths = file_paths(&list);
+            (!paths.is_empty()).then(|| shell_escaped(&paths))
+        } else if let Ok(texture) = value.get::<gdk::Texture>() {
+            match save_image(&texture) {
+                Some(path) => Some(shell_escaped(&[path])),
+                None => {
+                    term.widget.error_bell();
+                    return false;
+                }
+            }
+        } else {
+            None
+        };
+        let Some(text) = text else { return false };
         term.widget.grab_focus();
-        term.paste(&format!("{} ", shell_escaped(&paths)));
+        term.paste(&format!("{text} "));
         true
     });
     terminal.widget.add_controller(target);
@@ -89,7 +103,7 @@ pub fn paste(terminal: &Rc<SessionTerminal>) {
             let Ok(Some(texture)) = result else { return };
             match save_image(&texture) {
                 Some(path) => term.paste(&format!("{} ", shell_escaped(&[path]))),
-                None => term.widget.paste_clipboard(),
+                None => term.widget.error_bell(),
             }
         });
     } else {
@@ -97,14 +111,14 @@ pub fn paste(terminal: &Rc<SessionTerminal>) {
     }
 }
 
-/// `<tmp>/omux-paste/image-<date>-<time>-<ms>.png`. Milliseconds keep two
-/// pastes in one second apart (the Mac overwrites).
+/// `<private tmp>/omux-paste/image-<uuid>.png`: a unique name, so two
+/// images in the same second don't overwrite each other (as on the Mac).
 fn save_image(texture: &gdk::Texture) -> Option<String> {
     let dir: PathBuf = crate::persistence::private_temp_dir("omux-paste")?;
-    let now = glib::DateTime::now_local().ok()?;
-    let stamp = now.format("%Y%m%d-%H%M%S").ok()?;
-    let millis = now.microsecond() / 1000;
-    let path = dir.join(format!("image-{stamp}-{millis:03}.png"));
+    let path = dir.join(format!(
+        "image-{}.png",
+        Uuid::new_v4().to_string().to_uppercase()
+    ));
     texture.save_to_png(&path).ok()?;
     Some(path.display().to_string())
 }

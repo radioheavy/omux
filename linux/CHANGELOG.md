@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-First Linux release. It covers the features of omux 0.5.0 for macOS:
+First Linux release. It covers the features of omux 0.6.1 for macOS:
 
 - **Sessions:**
   - Projects and sessions in a sidebar. Sessions can be renamed, colored, dragged and moved between projects.

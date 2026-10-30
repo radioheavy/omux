@@ -4,6 +4,17 @@ Source of truth: the macOS SwiftUI app in `Sources/omux/` (version 0.5.0, build 
 
 Citation format is `File.swift:line` (all files under `Sources/omux/` unless noted). Swift `UserDefaults` keys are given verbatim so the Linux settings file can reuse them. "Mac" = the Swift app, "Linux" = the port.
 
+Update for 0.6.1 (upstream `0e39e51`):
+- unknown provider and color values decode as unset;
+- Recent decodes the 128 KiB head leniently;
+- `Git.slug` collapses runs of `.` and `/`;
+- `parseDiff` resets on `diff ` lines (type changes);
+- git's stderr is read concurrently;
+- image data dropped on the terminal is saved as `image-<UUID>.png` and its path pasted;
+- Option composes layout characters. On Linux that's AltGr, which VTE already handles.
+
+Sparkle updates (0.6.0) are macOS-only. The Linux port follows all of the above.
+
 Reading note: the one piece of behavior that is NOT in this repo is the OSC 7501 "program status" parser, which lives in the SwiftTerm dependency (`Package.swift:7`, resolved 1.99.1 in `Package.resolved`). Everything the app does with it is documented in section 4.1; the wire grammar is an open question (section 13).
 
 ---

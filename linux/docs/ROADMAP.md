@@ -38,7 +38,6 @@ These resolve the open questions in PARITY.md section 13.
 9. **Shortcuts.** We follow PARITY.md 11.4: GNOME Terminal conventions (Ctrl+Shift+…) so that readline keys reach the shell.
 10. **Changes panel.** The Mac watches the folder with FSEvents. Linux instead polls `git` every 2 s while the panel shows Changes, and refreshes when the session changes or omux becomes active. A recursive inotify watch of a large repository (node_modules included) can run out of watches. The Files tab watches only the root and the folders that are open.
 11. **Small deliberate differences.**
-    - Pasted image names include milliseconds, so two pastes in one second don't overwrite each other.
     - The Codex port pick retries a few times if the port is taken.
     - A subagent's start time falls back to the file's modified time when the filesystem has no birth time.
 

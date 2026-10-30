@@ -157,7 +157,16 @@ pub fn slug(name: &str) -> String {
         .split(|c: char| !(c.is_alphanumeric() || "-_/.".contains(c)))
         .filter(|w| !w.is_empty())
         .collect();
-    let joined: String = words.join("-").chars().take(48).collect();
+    // Git rejects "..", "//" and components starting with ".": keep only
+    // the first of such a run.
+    let mut collapsed = String::new();
+    for c in words.join("-").chars() {
+        let run = matches!(c, '.' | '/') && collapsed.ends_with(['.', '/']);
+        if !run {
+            collapsed.push(c);
+        }
+    }
+    let joined: String = collapsed.chars().take(48).collect();
     joined.trim_matches(['-', '.', '/']).to_string()
 }
 
@@ -563,6 +572,9 @@ pub fn parse_diff(text: &str) -> Vec<DiffLine> {
         if let Some((o, n)) = parse_hunk_header(l) {
             (old, new, in_hunk) = (o, n, true);
             lines.push(line(DiffKind::Hunk, l, None, None));
+        } else if l.starts_with("diff ") {
+            // A type change (symlink ↔ file) diffs as two files; skip the second's header.
+            in_hunk = false;
         } else if l.starts_with("Binary files") {
             lines.push(line(DiffKind::Info, "Binary file changed", None, None));
         } else if !in_hunk {
@@ -851,5 +863,30 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].status, 'U');
         cleanup(&repo);
+    }
+
+    #[test]
+    fn slug_collapses_runs_git_rejects() {
+        assert_eq!(slug("Fix the login bug"), "fix-the-login-bug");
+        assert_eq!(slug("Refactor... auth"), "refactor.-auth");
+        assert_eq!(slug("docs //notes"), "docs-/notes");
+        assert_eq!(slug("foo /.hidden"), "foo-/hidden");
+    }
+
+    #[test]
+    fn type_change_diff_skips_the_second_file_header() {
+        let diff = "diff --git a/link b/link\ndeleted file mode 120000\n--- a/link\n+++ /dev/null\n@@ -1 +0,0 @@\n-target\n\\ No newline at end of file\ndiff --git a/link b/link\nnew file mode 100644\n--- /dev/null\n+++ b/link\n@@ -0,0 +1,2 @@\n+one\n+two\n";
+        let lines: Vec<DiffLine> = parse_diff(diff)
+            .into_iter()
+            .filter(|l| l.kind != DiffKind::Hunk)
+            .collect();
+        assert_eq!(
+            lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+            ["target", "one", "two"]
+        );
+        assert_eq!(
+            lines.iter().map(|l| l.new_number).collect::<Vec<_>>(),
+            [None, Some(1), Some(2)]
+        );
     }
 }
