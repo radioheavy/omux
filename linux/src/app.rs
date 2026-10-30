@@ -78,6 +78,8 @@ impl App {
 
         crate::ui::window::connect(&app);
         crate::actions::install(&app);
+        crate::ui::agents::install(&app);
+        crate::usage::install(&app);
         app.apply_theme();
         if fresh {
             app.save_now();

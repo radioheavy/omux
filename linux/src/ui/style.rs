@@ -94,6 +94,12 @@ headerbar.omux-chrome, .omux-chrome-bar {{ box-shadow: none; border-bottom: 1px 
 .omux-hunk {{ background-color: alpha({blue}, 0.08); }}
 button.omux-small {{ min-height: 22px; min-width: 22px; padding: 0 8px; font-size: 0.85em; }}
 .omux-mono {{ font-family: monospace; }}
+levelbar.omux-usage-bar trough {{ min-height: 3px; padding: 0; border-radius: 2px; background-color: alpha(currentColor, 0.12); }}
+levelbar.omux-usage-bar block {{ min-height: 3px; border-radius: 2px; }}
+levelbar.omux-usage-bar block.filled {{ background-color: {blue}; }}
+levelbar.omux-usage-bar.orange block.filled {{ background-color: {orange}; }}
+levelbar.omux-usage-bar.red block.filled {{ background-color: {red}; }}
+levelbar.omux-usage-bar block.empty {{ background-color: transparent; }}
 "#,
         blue = c(semantic::BLUE),
         orange = c(semantic::ORANGE),
