@@ -229,14 +229,9 @@ mod tests {
         pty.write(b"printf '\\033]7501;state=done\\007'; echo hi; exit 3\n");
         let mut text = Vec::new();
         let mut saw_status = false;
-        loop {
-            match rx.recv_blocking().unwrap() {
-                Output::Bytes(bytes, events) => {
-                    text.extend(bytes);
-                    saw_status |= events.iter().any(|e| matches!(e, Event::Status(_)));
-                }
-                Output::Exited => break,
-            }
+        while let Output::Bytes(bytes, events) = rx.recv_blocking().unwrap() {
+            text.extend(bytes);
+            saw_status |= events.iter().any(|e| matches!(e, Event::Status(_)));
         }
         assert!(String::from_utf8_lossy(&text).contains("hi"));
         assert!(saw_status);
