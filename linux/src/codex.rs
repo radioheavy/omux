@@ -60,3 +60,16 @@ pub fn pending_approval(_app: &App, _id: Uuid) -> Option<String> {
 }
 
 pub fn shutdown(_app: &App) {}
+
+/// Recent Codex conversations (from the catalog app-server).
+pub fn recent() -> Result<Vec<crate::ui::recent::Conversation>, String> {
+    Err("Codex conversations are listed once omux manages Codex sessions.".into())
+}
+
+/// The selected Codex session's plan limits, and its plan name.
+pub fn usage(_app: &App) -> (Option<crate::usage::Usage>, Option<String>) {
+    (None, None)
+}
+
+/// The Codex subagents button in the session header.
+pub fn header_agents(_app: &App, _id: Uuid, _container: &gtk::Box) {}

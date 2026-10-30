@@ -36,3 +36,22 @@ pub fn show_tab(app: &Rc<App>, tab: &str) {
         gtk::prelude::ActionGroupExt::activate_action(&app.gtk_app, "toggle-panel", None);
     }
 }
+
+/// Opens a subagent's transcript. (Shown in the Files panel's preview area
+/// once the panel lands; a window until then.)
+pub fn show_transcript(_id: Uuid, agent: &crate::claude::SubAgent) {
+    let dialog = adw::Dialog::new();
+    dialog.set_title(&agent.description);
+    dialog.set_content_width(560);
+    dialog.set_content_height(600);
+    let view = adw::ToolbarView::new();
+    view.add_top_bar(&adw::HeaderBar::new());
+    view.set_content(Some(&crate::ui::agents::transcript_view(
+        agent.transcript.clone(),
+    )));
+    dialog.set_child(Some(&view));
+    let window = gtk::gio::Application::default()
+        .and_then(|a| a.downcast::<gtk::Application>().ok())
+        .and_then(|a| a.active_window());
+    adw::prelude::AdwDialogExt::present(&dialog, window.as_ref());
+}
