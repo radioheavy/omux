@@ -491,7 +491,7 @@ impl Protocol {
             return;
         };
         let parent = str_field(raw, "parentThreadId");
-        if let Some(parent) = parent.filter(|p| self.owns(p)) {
+        if parent.is_some_and(|p| self.owns(p)) {
             let name = str_field(raw, "agentNickname").or_else(|| str_field(raw, "agentRole"));
             self.update_agent(id, name, None, fx);
             return;

@@ -35,6 +35,7 @@ use connection::{lock, resume_command, Conn, Handlers};
 use protocol::{Effect, Protocol};
 
 pub use protocol::{format_transcript, Approval, CodexAgent, CodexState, CodexStatus, RequestId};
+#[allow(unused_imports)]
 pub use usage::{CodexUsage, UsageLimit};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
