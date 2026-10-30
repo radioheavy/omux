@@ -164,13 +164,14 @@ pub fn update_sidebar(app: &App, id: Uuid, container: &gtk::Box) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
+    crate::ui::worktree_actions::sidebar_extras(app, id, container);
+    container.set_visible(container.first_child().is_some());
     let selected = app.selected.get() == Some(id);
     let mut list: Vec<SubAgent> = agents(id);
     if !selected {
         list.retain(|a| a.blocked);
     }
     if list.is_empty() {
-        container.set_visible(false);
         return;
     }
     container.set_visible(true);

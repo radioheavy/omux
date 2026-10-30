@@ -1,9 +1,14 @@
 pub mod agents;
+pub mod browser;
+pub mod changes;
 pub mod dialogs;
+pub mod files;
 pub mod header;
 pub mod links;
+pub mod markdown;
 pub mod panel;
 pub mod paste;
+pub mod preview;
 pub mod recent;
 pub mod settings_dialog;
 pub mod sidebar;
