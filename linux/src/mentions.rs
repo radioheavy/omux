@@ -34,17 +34,23 @@ fn push_unique<T: PartialEq>(list: &mut Vec<T>, item: T) {
 /// Existing regular files mentioned in `text`, oldest mention first.
 pub fn paths(text: &str) -> Vec<PathBuf> {
     let mut found = Vec::new();
-    for m in path_regex().find_iter(text) {
+    let mut at = 0;
+    while let Some(m) = path_regex().find_at(text, at) {
         let preceded_by_word = text[..m.start()]
             .chars()
             .next_back()
             .is_some_and(|c| c.is_alphanumeric() || c == '_');
         if preceded_by_word {
+            // Like a lookbehind: try again just after the rejected start, so
+            // `word~/a/b` still finds `/a/b`.
+            let step = text[m.start()..].chars().next().map_or(1, char::len_utf8);
+            at = m.start() + step;
             continue;
         }
         if let Some(path) = file_path_from(m.as_str()) {
             push_unique(&mut found, path);
         }
+        at = m.end();
     }
     found
 }

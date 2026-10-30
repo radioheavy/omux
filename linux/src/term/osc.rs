@@ -25,7 +25,7 @@ pub enum Event {
 }
 
 /// Longest OSC kept; longer ones are dropped (OSC 7501 is capped lower).
-const MAX_OSC: usize = 8192;
+const MAX_OSC: usize = 64 * 1024;
 
 #[derive(Debug, Default)]
 enum Mode {
@@ -34,7 +34,8 @@ enum Mode {
     Escape,
     Osc,
     OscEscape,
-    /// An over-long OSC: skip to its terminator.
+    /// An over-long OSC, or a DCS / SOS / PM / APC string: skip to its
+    /// terminator so an `ESC ]` inside it isn't taken as an OSC.
     OscSkip,
     OscSkipEscape,
 }
@@ -70,6 +71,7 @@ impl Scanner {
                     self.buffer.clear();
                     Mode::Osc
                 }
+                b'P' | b'X' | b'^' | b'_' => Mode::OscSkip,
                 ESC => Mode::Escape,
                 _ => Mode::Ground,
             },
@@ -80,6 +82,9 @@ impl Scanner {
                 }
                 ESC => Mode::OscEscape,
                 CAN | SUB => Mode::Ground,
+                // Other C0 controls are ignored inside a string, as in the
+                // VT500 parser SwiftTerm follows.
+                0x00..=0x1f => Mode::Osc,
                 _ if self.buffer.len() >= MAX_OSC => Mode::OscSkip,
                 _ => {
                     self.buffer.push(byte);
@@ -262,6 +267,24 @@ mod tests {
                 body: "kept".into()
             }]
         );
+    }
+
+    #[test]
+    fn c0_controls_inside_an_osc_are_ignored() {
+        let events = scan(&[b"\x1b]9;one\ntwo\x07"]);
+        assert_eq!(
+            events,
+            vec![Event::Notification {
+                title: None,
+                body: "onetwo".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn osc_inside_a_dcs_string_is_not_parsed() {
+        assert!(scan(&[b"\x1bPq\x1b]9;hidden\x07\x1b\\"]).is_empty());
+        assert_eq!(scan(&[b"\x1b_x\x1b\\\x1b]9;shown\x07"]).len(), 1);
     }
 
     #[test]

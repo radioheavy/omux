@@ -53,7 +53,8 @@ pub fn install(app: &Rc<App>, _id: Uuid, terminal: &Rc<SessionTerminal>) {
         gesture.set_state(gtk::EventSequenceState::Claimed);
         match file_path_from(&link) {
             Some(path) => crate::ui::panel::preview_file(&app, &path),
-            None if link.contains("://") => app.open_uri(&link),
+            // Trailing sentence punctuation isn't part of a URL, as on the Mac.
+            None if link.contains(':') => app.open_uri(link.trim_end_matches(['.', ',', ':', ';'])),
             None => {}
         }
     });

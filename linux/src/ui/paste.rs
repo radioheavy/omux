@@ -100,8 +100,7 @@ pub fn paste(terminal: &Rc<SessionTerminal>) {
 /// `<tmp>/omux-paste/image-<date>-<time>-<ms>.png`. Milliseconds keep two
 /// pastes in one second apart (the Mac overwrites).
 fn save_image(texture: &gdk::Texture) -> Option<String> {
-    let dir: PathBuf = std::env::temp_dir().join("omux-paste");
-    std::fs::create_dir_all(&dir).ok()?;
+    let dir: PathBuf = crate::persistence::private_temp_dir("omux-paste")?;
     let now = glib::DateTime::now_local().ok()?;
     let stamp = now.format("%Y%m%d-%H%M%S").ok()?;
     let millis = now.microsecond() / 1000;

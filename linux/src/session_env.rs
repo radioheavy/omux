@@ -3,15 +3,20 @@
 //! Homebrew PATH, the session inherits omux's environment: on Linux that
 //! carries the display, D-Bus, SSH agent and locale programs need.
 
+use std::ffi::OsString;
+
 use crate::term::pty;
 
-/// Variables that would make Claude Code think it runs inside another
-/// Claude Code session when omux itself was started from one.
-const STRIPPED: [&str; 3] = [
-    "CLAUDECODE",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_SSE_PORT",
-];
+/// Whether a variable describes the Claude Code session omux itself was
+/// started from (session ids, sockets, entry point): passed on, it would
+/// make every agent in omux think it is nested. User configuration such as
+/// `CLAUDE_CONFIG_DIR` and `ANTHROPIC_*` is kept; settings in the user's
+/// profile return anyway, since the shell is a login shell.
+fn is_nested_marker(key: &str) -> bool {
+    key == "CLAUDECODE"
+        || key.starts_with("CLAUDE_CODE_")
+        || matches!(key, "CLAUDE_PID" | "CLAUDE_EFFORT" | "AI_AGENT")
+}
 
 pub struct Extra<'a> {
     pub codex_token: Option<&'a str>,
@@ -26,17 +31,23 @@ pub fn shell() -> String {
         .unwrap_or_else(|| "/bin/bash".into())
 }
 
-pub fn build(extra: Extra<'_>) -> Vec<(String, String)> {
-    build_from(std::env::vars().collect(), extra)
+pub type Env = Vec<(OsString, OsString)>;
+
+/// `vars_os`: a variable that isn't valid UTF-8 is passed on, not a panic.
+pub fn build(extra: Extra<'_>) -> Env {
+    build_from(std::env::vars_os().collect(), extra)
 }
 
-fn build_from(inherited: Vec<(String, String)>, extra: Extra<'_>) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = inherited
+fn build_from(inherited: Env, extra: Extra<'_>) -> Env {
+    let mut env: Env = inherited
         .into_iter()
-        .filter(|(key, _)| !STRIPPED.contains(&key.as_str()) && !key.starts_with("OMUX_"))
+        .filter(|(key, _)| {
+            let key = key.to_string_lossy();
+            !is_nested_marker(&key) && !key.starts_with("OMUX_")
+        })
         .filter(|(key, _)| {
             !matches!(
-                key.as_str(),
+                key.to_string_lossy().as_ref(),
                 "TERM" | "COLORTERM" | "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "VTE_VERSION"
             )
         })
@@ -72,14 +83,19 @@ fn build_from(inherited: Vec<(String, String)>, extra: Extra<'_>) -> Vec<(String
 mod tests {
     use super::*;
 
-    fn get<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
-        env.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    fn get<'a>(env: &'a [(OsString, OsString)], key: &str) -> Option<&'a str> {
+        env.iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.to_str())
     }
 
     #[test]
     fn strips_nested_claude_markers_and_sets_terminal_identity() {
         let inherited = vec![
             ("CLAUDECODE".into(), "1".into()),
+            ("CLAUDE_CODE_SESSION_ID".into(), "abc".into()),
+            ("CLAUDE_CONFIG_DIR".into(), "/home/u/.claude-work".into()),
+            ("ANTHROPIC_BASE_URL".into(), "https://proxy".into()),
             ("TERM".into(), "dumb".into()),
             ("DISPLAY".into(), ":0".into()),
             ("OMUX_CODEX_TOKEN".into(), "stale".into()),
@@ -92,6 +108,9 @@ mod tests {
             },
         );
         assert_eq!(get(&env, "CLAUDECODE"), None);
+        assert_eq!(get(&env, "CLAUDE_CODE_SESSION_ID"), None);
+        assert_eq!(get(&env, "CLAUDE_CONFIG_DIR"), Some("/home/u/.claude-work"));
+        assert_eq!(get(&env, "ANTHROPIC_BASE_URL"), Some("https://proxy"));
         assert_eq!(
             get(&env, "OMUX_CODEX_TOKEN"),
             None,

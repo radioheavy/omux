@@ -78,6 +78,31 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::rename(&tmp, path)
 }
 
+/// A per-user scratch folder (`$XDG_RUNTIME_DIR/omux`, else
+/// `<tmp>/omux-<uid>`), mode 0700, for pasted images and browser picks:
+/// a shared `/tmp/omux-paste` could be pre-created by another user.
+pub fn private_temp_dir(name: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let base = match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(dir) if Path::new(&dir).is_dir() => PathBuf::from(dir).join("omux"),
+        _ => std::env::temp_dir().join(format!("omux-{}", unsafe { libc::getuid() })),
+    };
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&base)
+        .ok()?;
+    let meta = fs::symlink_metadata(&base).ok()?;
+    let mine = std::os::unix::fs::MetadataExt::uid(&meta) == unsafe { libc::getuid() };
+    if !meta.is_dir() || !mine {
+        return None;
+    }
+    let _ = fs::set_permissions(&base, fs::Permissions::from_mode(0o700));
+    let dir = base.join(name);
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
 /// Replaces a leading `~` with the home folder.
 pub fn expand_tilde(path: &str) -> PathBuf {
     if path == "~" {

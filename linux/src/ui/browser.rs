@@ -400,9 +400,10 @@ fn received(id: Uuid, json: &str) {
     let num = |k: &str| pick.get(k).and_then(Value::as_f64).unwrap_or(0.0);
     let (selector, html, css, url) = (get("selector"), get("html"), get("css"), get("url"));
     let millis = glib::real_time() / 1000;
-    let dir: PathBuf = std::env::temp_dir()
-        .join("omux-picks")
-        .join(millis.to_string());
+    let Some(picks) = crate::persistence::private_temp_dir("omux-picks") else {
+        return;
+    };
+    let dir: PathBuf = picks.join(millis.to_string());
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }

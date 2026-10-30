@@ -1,18 +1,26 @@
 //! A session's pseudo-terminal. omux owns the PTY (instead of letting VTE
 //! spawn the shell) so it can watch the output for OSC 7501 and friends; see
 //! docs/ROADMAP.md, decision 1.
+//!
+//! Three threads per session, so the GTK thread never blocks on the PTY:
+//! a reader (scans output and hands it to the main loop, which applies
+//! backpressure through a bounded channel), a writer (keys, pastes and
+//! replies, in order), and a waiter that reports the shell's exit even when
+//! a background job keeps the terminal open.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 use super::osc::{Event, Scanner};
 
-/// What the reader thread reports to the main loop.
+/// What the PTY threads report to the main loop.
 pub enum Output {
     Bytes(Vec<u8>, Vec<Event>),
     Exited,
@@ -20,21 +28,24 @@ pub enum Output {
 
 pub struct Pty {
     master: Arc<File>,
-    child: Arc<Mutex<Child>>,
+    writer: mpsc::Sender<Vec<u8>>,
     pid: i32,
+    exited: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
 }
 
 pub struct Spawn<'a> {
     pub shell: &'a str,
     pub cwd: &'a Path,
-    pub env: Vec<(String, String)>,
+    pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     pub rows: u16,
     pub cols: u16,
 }
 
 impl Pty {
     /// Starts `shell -l` as the session leader of a new PTY. Output arrives on
-    /// `sink` from a background thread, already scanned for OSC events.
+    /// `sink`, already scanned for OSC events; give it a bounded channel so a
+    /// flood of output waits for the UI instead of filling memory.
     pub fn spawn(spec: Spawn<'_>, sink: async_channel::Sender<Output>) -> io::Result<Self> {
         let (master, slave) = open_pty(spec.rows, spec.cols)?;
 
@@ -43,7 +54,7 @@ impl Pty {
             .arg("-l")
             .current_dir(spec.cwd)
             .env_clear()
-            .envs(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .envs(spec.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::from(slave.try_clone()?))
             .stdout(Stdio::from(slave.try_clone()?))
             .stderr(Stdio::from(slave));
@@ -60,26 +71,62 @@ impl Pty {
                 Ok(())
             });
         }
-        let child = command.spawn()?;
-        let pid = child.id() as i32;
+        // The waiter reaps the shell by pid; the Child handle isn't needed.
+        let pid = command.spawn()?.id() as i32;
+        drop(command);
         let master = Arc::new(File::from(master));
-        let child = Arc::new(Mutex::new(child));
+        let exited = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
 
-        let reader = master.clone();
-        let reaper = child.clone();
+        let (writer, inbox) = mpsc::channel::<Vec<u8>>();
+        let out = master.clone();
         std::thread::Builder::new()
-            .name(format!("omux-pty-{pid}"))
-            .spawn(move || read_loop(reader, reaper, sink))?;
+            .name(format!("omux-pty-w{pid}"))
+            .spawn(move || {
+                while let Ok(bytes) = inbox.recv() {
+                    if (&*out).write_all(&bytes).is_err() {
+                        break;
+                    }
+                }
+            })?;
 
-        Ok(Self { master, child, pid })
+        let (reader, replies, reader_sink, reader_stop) =
+            (master.clone(), writer.clone(), sink.clone(), stop.clone());
+        std::thread::Builder::new()
+            .name(format!("omux-pty-r{pid}"))
+            .spawn(move || read_loop(reader, replies, reader_sink, reader_stop))?;
+
+        let waiter_exited = exited.clone();
+        std::thread::Builder::new()
+            .name(format!("omux-pty-x{pid}"))
+            .spawn(move || {
+                let mut status = 0;
+                while unsafe { libc::waitpid(pid, &mut status, 0) } < 0
+                    && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted
+                {
+                }
+                waiter_exited.store(true, Ordering::SeqCst);
+                // Let the reader hand over the shell's last output first.
+                std::thread::sleep(Duration::from_millis(60));
+                let _ = sink.send_blocking(Output::Exited);
+            })?;
+
+        Ok(Self {
+            master,
+            writer,
+            pid,
+            exited,
+            stop,
+        })
     }
 
     pub fn pid(&self) -> i32 {
         self.pid
     }
 
+    /// Queues bytes for the program; never blocks.
     pub fn write(&self, bytes: &[u8]) {
-        let _ = (&*self.master).write_all(bytes);
+        let _ = self.writer.send(bytes.to_vec());
     }
 
     pub fn resize(&self, rows: u16, cols: u16) {
@@ -101,15 +148,15 @@ impl Pty {
         group > 0 && group != self.pid
     }
 
-    /// Hangs up the whole session, then makes sure the shell goes.
+    /// Hangs up the shell's process group, then makes sure the shell goes,
+    /// as the Mac does. A reaped pid is never signalled (it may be reused).
     pub fn kill_tree(&self) {
+        if self.exited.load(Ordering::SeqCst) {
+            return;
+        }
         unsafe {
             libc::killpg(self.pid, libc::SIGHUP);
-        }
-        if let Ok(mut child) = self.child.lock() {
-            if matches!(child.try_wait(), Ok(None)) {
-                let _ = child.kill();
-            }
+            libc::kill(self.pid, libc::SIGTERM);
         }
     }
 }
@@ -117,6 +164,7 @@ impl Pty {
 impl Drop for Pty {
     fn drop(&mut self) {
         self.kill_tree();
+        self.stop.store(true, Ordering::SeqCst);
     }
 }
 
@@ -142,16 +190,42 @@ fn open_pty(rows: u16, cols: u16) -> io::Result<(OwnedFd, OwnedFd)> {
         return Err(io::Error::last_os_error());
     }
     unsafe {
-        // The shell must not inherit the master side.
+        // Neither side may leak into other programs omux starts (git, codex,
+        // the agent scanner's children). The shell gets the slave as its
+        // stdio through dup2, which clears the flag on the copies.
         libc::fcntl(master, libc::F_SETFD, libc::FD_CLOEXEC);
+        libc::fcntl(slave, libc::F_SETFD, libc::FD_CLOEXEC);
         Ok((OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)))
     }
 }
 
-fn read_loop(master: Arc<File>, child: Arc<Mutex<Child>>, sink: async_channel::Sender<Output>) {
+fn read_loop(
+    master: Arc<File>,
+    replies: mpsc::Sender<Vec<u8>>,
+    sink: async_channel::Sender<Output>,
+    stop: Arc<AtomicBool>,
+) {
     let mut scanner = Scanner::default();
     let mut buffer = vec![0u8; 64 * 1024];
-    loop {
+    let fd = master.as_raw_fd();
+    while !stop.load(Ordering::SeqCst) {
+        // Poll with a timeout so a dropped session stops this thread even
+        // while a background job keeps the terminal open.
+        let mut pollfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ready = unsafe { libc::poll(&mut pollfd, 1, 250) };
+        if ready == 0 {
+            continue;
+        }
+        if ready < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            break;
+        }
         match (&*master).read(&mut buffer) {
             Ok(0) => break,
             Ok(n) => {
@@ -162,7 +236,7 @@ fn read_loop(master: Arc<File>, child: Arc<Mutex<Child>>, sink: async_channel::S
                 for event in &events {
                     if let Event::StatusQuery { bel } = event {
                         let ending: &[u8] = if *bel { b"\x07" } else { b"\x1b\\" };
-                        let _ = (&*master).write_all(&[b"\x1b]7501;?", ending].concat());
+                        let _ = replies.send([b"\x1b]7501;?", ending].concat());
                     }
                 }
                 if sink.send_blocking(Output::Bytes(bytes, events)).is_err() {
@@ -174,10 +248,6 @@ fn read_loop(master: Arc<File>, child: Arc<Mutex<Child>>, sink: async_channel::S
             Err(_) => break,
         }
     }
-    if let Ok(mut child) = child.lock() {
-        let _ = child.wait();
-    }
-    let _ = sink.send_blocking(Output::Exited);
 }
 
 /// The login name for `USER`/`LOGNAME` when the environment lacks them.
@@ -235,5 +305,31 @@ mod tests {
         }
         assert!(String::from_utf8_lossy(&text).contains("hi"));
         assert!(saw_status);
+    }
+
+    #[test]
+    fn exit_is_reported_while_a_background_job_holds_the_terminal() {
+        let (tx, rx) = async_channel::unbounded();
+        let pty = Pty::spawn(
+            Spawn {
+                shell: "/bin/sh",
+                cwd: Path::new("/"),
+                env: vec![("PATH".into(), "/usr/bin:/bin".into())],
+                rows: 24,
+                cols: 80,
+            },
+            tx,
+        )
+        .unwrap();
+        pty.write(b"sleep 30 & exit\n");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            assert!(std::time::Instant::now() < deadline, "no exit reported");
+            match rx.recv_blocking().unwrap() {
+                Output::Exited => break,
+                Output::Bytes(..) => {}
+            }
+        }
+        assert!(!pty.is_busy());
     }
 }

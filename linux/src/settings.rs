@@ -60,11 +60,32 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Reads each key on its own, like UserDefaults: one value of the wrong
+    /// type falls back to its default instead of resetting every setting.
     pub fn load() -> Self {
         fs::read(config_dir().join("settings.json"))
             .ok()
-            .and_then(|data| serde_json::from_slice(&data).ok())
+            .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok())
+            .map(|value| Self::from_value(&value))
             .unwrap_or_default()
+    }
+
+    fn from_value(value: &serde_json::Value) -> Self {
+        let Ok(serde_json::Value::Object(mut merged)) = serde_json::to_value(Self::default())
+        else {
+            return Self::default();
+        };
+        if let serde_json::Value::Object(stored) = value {
+            for (key, item) in stored {
+                let same_kind = merged.get(key).is_some_and(|default| {
+                    std::mem::discriminant(default) == std::mem::discriminant(item)
+                });
+                if same_kind {
+                    merged.insert(key.clone(), item.clone());
+                }
+            }
+        }
+        serde_json::from_value(serde_json::Value::Object(merged)).unwrap_or_default()
     }
 
     pub fn save(&self) {
@@ -95,6 +116,16 @@ mod tests {
         assert!(s.notify_needs_you);
         assert!(!s.notify_done);
         assert_eq!(s.usage_interval, 300.0);
+    }
+
+    #[test]
+    fn one_bad_value_keeps_the_others() {
+        let s = Settings::from_value(
+            &serde_json::json!({"theme": "nord", "fontSize": "big", "confirmQuit": false}),
+        );
+        assert_eq!(s.theme, "nord");
+        assert_eq!(s.font_size, 13.0);
+        assert!(!s.confirm_quit);
     }
 
     #[test]

@@ -157,10 +157,11 @@ impl SessionTerminal {
         self: &Rc<Self>,
         shell: &str,
         cwd: &Path,
-        env: Vec<(String, String)>,
+        env: crate::session_env::Env,
     ) -> std::io::Result<i32> {
         self.kill();
-        let (tx, rx) = async_channel::unbounded();
+        // Bounded: a flood of output waits in the PTY until the UI catches up.
+        let (tx, rx) = async_channel::bounded(16);
         let rows = self.widget.row_count().max(1) as u16;
         let cols = self.widget.column_count().max(1) as u16;
         let pty = Pty::spawn(
@@ -176,6 +177,10 @@ impl SessionTerminal {
         let pid = pty.pid();
         *self.pty.borrow_mut() = Some(pty);
         self.size.set((0, 0));
+        // Records belong to the process that reported them.
+        if self.status.borrow_mut().clear("") {
+            self.emit_status();
+        }
 
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
@@ -183,6 +188,10 @@ impl SessionTerminal {
                 let Some(this) = weak.upgrade() else { break };
                 match output {
                     Output::Bytes(bytes, events) => {
+                        // Output still queued from a killed or replaced process.
+                        if this.pty.borrow().as_ref().map(Pty::pid) != Some(pid) {
+                            continue;
+                        }
                         this.widget.feed(&bytes);
                         this.handle(events);
                     }
@@ -251,8 +260,12 @@ impl SessionTerminal {
     }
 
     pub fn kill(&self) {
-        if let Some(pty) = self.pty.borrow_mut().take() {
+        let pty = self.pty.borrow_mut().take();
+        if let Some(pty) = pty {
             pty.kill_tree();
+            if self.status.borrow_mut().clear("") {
+                self.emit_status();
+            }
         }
     }
 }
