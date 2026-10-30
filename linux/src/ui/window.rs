@@ -111,12 +111,17 @@ impl Ui {
 
     pub fn set_panel_visible(&self, visible: bool) {
         self.panel.set_visible(visible);
-        if visible && self.content_paned.position() > self.content_paned.width() - 260 {
-            let width = self.content_paned.width();
-            if width > 0 {
-                self.content_paned.set_position((width - 380).max(360));
-            }
+        if !visible {
+            return;
         }
+        // Open at the Mac's ideal width (380), keeping 360 for the terminal.
+        let paned = self.content_paned.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let width = paned.width();
+            if width > 0 && width - paned.position() < 300 {
+                paned.set_position((width - 380).max(360));
+            }
+        });
     }
 }
 

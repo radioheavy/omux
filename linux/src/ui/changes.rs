@@ -257,6 +257,14 @@ pub fn refresh() {
                 let changed = c.files != files || c.is_repo != repo;
                 c.is_repo = repo;
                 c.files = files;
+                // Show a diff right away: the first file, or keep the selection.
+                let keep = c
+                    .selected
+                    .as_ref()
+                    .is_some_and(|s| c.files.iter().any(|f| f.path == *s));
+                if !keep {
+                    c.selected = c.files.first().map(|f| f.path.clone());
+                }
                 let _ = base;
                 changed
             })

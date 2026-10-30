@@ -191,6 +191,15 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
     paned.add_controller(drop);
 
     apply_collapsed(app.settings.borrow().files_browser_collapsed);
+    // The list starts at about 220 px, the preview takes the rest.
+    paned.add_tick_callback(|paned, _| {
+        let height = paned.height();
+        if height <= 0 {
+            return glib::ControlFlow::Continue;
+        }
+        paned.set_position((height - 220).max(200));
+        glib::ControlFlow::Break
+    });
 
     // Mentioned paths: re-scanned every 4 s while the tab is on screen.
     let weak = Rc::downgrade(app);
@@ -230,13 +239,10 @@ fn apply_collapsed(collapsed: bool) {
 }
 
 fn placeholder() -> gtk::Widget {
-    let page = adw::StatusPage::builder()
-        .title("Select a file to preview")
-        .icon_name("document-open-symbolic")
-        .build();
-    page.add_css_class("compact");
-    page.set_vexpand(true);
-    page.upcast()
+    let label = gtk::Label::new(Some("Select a file to preview"));
+    label.add_css_class("dim-label");
+    label.set_vexpand(true);
+    label.upcast()
 }
 
 pub fn set_preview_widget(widget: &impl IsA<gtk::Widget>) {
