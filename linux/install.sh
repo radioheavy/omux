@@ -20,12 +20,10 @@ fi
 SOURCE="${1:-target/release/omux}"
 [ -x "$SOURCE" ] || { echo "No omux binary at $SOURCE" >&2; exit 1; }
 
-missing=""
-for lib in libgtk-4.so.1 libadwaita-1.so.0 libvte-2.91-gtk4.so.0 libwebkitgtk-6.0.so.4; do
-  ldconfig -p 2>/dev/null | grep -q "$lib" || missing="$missing $lib"
-done
+# Ask the dynamic linker what the binary itself still lacks.
+missing=$(ldd "$SOURCE" 2>/dev/null | awk '/not found/ {print $1}' | tr '\n' ' ')
 if [ -n "$missing" ]; then
-  echo "Missing libraries:$missing" >&2
+  echo "Missing libraries: $missing" >&2
   echo "On Ubuntu/Debian: sudo apt install libgtk-4-1 libadwaita-1-0 libvte-2.91-gtk4-0 libwebkitgtk-6.0-4" >&2
 fi
 
