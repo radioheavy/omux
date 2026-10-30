@@ -1,0 +1,17 @@
+[package]
+name = "omux"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Linux port of omux: a terminal for running Claude Code and Codex sessions side by side"
+license = "MIT"
+repository = "https://github.com/onurozcan/omux"
+
+[dependencies]
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
+vte = { package = "vte4", version = "0.10", features = ["v0_76"] }
+
+[profile.release]
+lto = "thin"
+strip = true

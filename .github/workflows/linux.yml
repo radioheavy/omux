@@ -1,0 +1,37 @@
+name: Linux
+
+on:
+  push:
+    paths: ["linux/**", ".github/workflows/linux.yml"]
+  pull_request:
+    paths: ["linux/**", ".github/workflows/linux.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: linux
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK, libadwaita, VTE and WebKitGTK headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libwebkitgtk-6.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: linux
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omux-linux-x86_64
+          path: linux/target/release/omux
