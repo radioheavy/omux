@@ -153,7 +153,8 @@ impl Sidebar {
 
         let menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
         menu.set_has_arrow(false);
-        menu.set_parent(&list);
+        // Not parented to the list: ListBox::remove_all would treat it as a row.
+        menu.set_parent(&root);
 
         Self {
             root,
@@ -609,7 +610,12 @@ pub fn connect(app: &Rc<App>) {
             Some((_, id)) => group_menu(&app, id),
             None => empty_menu(),
         };
-        let menu = &app.ui.sidebar.menu;
+        let sidebar = &app.ui.sidebar;
+        let (x, y) = sidebar
+            .list
+            .translate_coordinates(&sidebar.root, x, y)
+            .unwrap_or((x, y));
+        let menu = &sidebar.menu;
         menu.set_menu_model(Some(&model));
         menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
         menu.popup();
