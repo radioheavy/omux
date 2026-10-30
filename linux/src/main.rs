@@ -2,7 +2,12 @@
 // of the core are not wired into the UI yet.
 #![allow(dead_code)]
 
+mod actions;
+mod app;
+mod claude;
+mod codex;
 mod model;
+mod notify;
 mod persistence;
 mod runtime;
 mod session_env;
@@ -10,51 +15,45 @@ mod settings;
 mod swift_json;
 mod term;
 mod theme;
+mod ui;
+mod usage;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::glib;
+use gtk::{gio, glib};
 
-use term::SessionTerminal;
-
-const APP_ID: &str = "net.pf1.omux";
+pub const APP_ID: &str = "net.pf1.omux";
 
 fn main() -> glib::ExitCode {
-    let app = adw::Application::builder().application_id(APP_ID).build();
-    app.connect_activate(build_window);
-    app.run()
-}
-
-fn build_window(app: &adw::Application) {
-    let terminal = SessionTerminal::new();
-
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    content.append(&adw::HeaderBar::new());
-    content.append(&terminal.widget);
-
-    let window = adw::ApplicationWindow::builder()
-        .application(app)
-        .title("omux")
-        .default_width(1100)
-        .default_height(720)
-        .content(&content)
+    let gtk_app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
+    // One instance: launching again (or `omux <folder>`) reaches this one.
+    let state: Rc<RefCell<Option<Rc<app::App>>>> = Rc::new(RefCell::new(None));
 
-    let win = window.downgrade();
-    terminal.set_handler(move |event| {
-        if let (term::TermEvent::Exited, Some(win)) = (&event, win.upgrade()) {
-            win.close();
+    let s = state.clone();
+    gtk_app.connect_activate(move |gtk_app| {
+        let app = s
+            .borrow_mut()
+            .get_or_insert_with(|| app::App::new(gtk_app))
+            .clone();
+        app.ui.window.present();
+    });
+    let s = state.clone();
+    gtk_app.connect_open(move |gtk_app, files, _| {
+        let app = s
+            .borrow_mut()
+            .get_or_insert_with(|| app::App::new(gtk_app))
+            .clone();
+        app.ui.window.present();
+        for file in files {
+            if let Some(path) = file.path().filter(|p| p.is_dir()) {
+                app.open_folder(&path);
+            }
         }
     });
-    let env = session_env::build(session_env::Extra {
-        codex_token: None,
-        repo: None,
-    });
-    if let Err(err) = terminal.spawn(&session_env::shell(), &persistence::home_dir(), env) {
-        eprintln!("omux: could not start shell: {err}");
-    }
-
-    window.present();
-    terminal.widget.grab_focus();
-    // Keep the terminal alive as long as the window.
-    unsafe { window.set_data("omux-terminal", terminal) };
+    gtk_app.run()
 }

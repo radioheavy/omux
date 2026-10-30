@@ -1,0 +1,49 @@
+{
+  "groups" : [
+    {
+      "command" : "claude",
+      "directory" : "\/tmp",
+      "id" : "6B1E2C1A-0A55-4C0E-9C3B-2B5A9E1D0001",
+      "isCollapsed" : false,
+      "name" : "omux",
+      "provider" : "claude",
+      "tabs" : [
+        {
+          "claudeSessionID" : "1F2E3D4C-5B6A-4798-8A9B-0C1D2E3F0001",
+          "color" : "none",
+          "command" : "",
+          "id" : "AA000000-0000-4000-8000-000000000001",
+          "name" : "Linux port"
+        },
+        {
+          "claudeSessionID" : "1F2E3D4C-5B6A-4798-8A9B-0C1D2E3F0002",
+          "color" : "purple",
+          "command" : "",
+          "id" : "AA000000-0000-4000-8000-000000000002",
+          "name" : "Review PR"
+        }
+      ],
+      "useWorktrees" : false,
+      "worktreeSetup" : ""
+    },
+    {
+      "command" : "codex",
+      "id" : "6B1E2C1A-0A55-4C0E-9C3B-2B5A9E1D0002",
+      "isCollapsed" : false,
+      "name" : "website",
+      "provider" : "codex",
+      "tabs" : [
+        {
+          "claudeSessionID" : "1F2E3D4C-5B6A-4798-8A9B-0C1D2E3F0003",
+          "color" : "teal",
+          "command" : "",
+          "id" : "AA000000-0000-4000-8000-000000000003",
+          "name" : "Landing page"
+        }
+      ],
+      "useWorktrees" : false,
+      "worktreeSetup" : ""
+    }
+  ],
+  "selectedTabID" : "AA000000-0000-4000-8000-000000000001"
+}
