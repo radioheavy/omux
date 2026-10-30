@@ -128,9 +128,9 @@ impl SessionTerminal {
         this
     }
 
-    pub fn add_popover(&self, popover: &impl IsA<gtk::Popover>) {
+    pub fn add_popover(&self, popover: &gtk::Popover) {
         popover.set_parent(&self.widget);
-        self.popovers.borrow_mut().push(popover.clone().upcast());
+        self.popovers.borrow_mut().push(popover.clone());
     }
 
     /// Kills the process and detaches child widgets before the terminal is dropped.

@@ -222,7 +222,7 @@ pub fn update_sidebar(app: &App, id: Uuid, container: &gtk::Box) {
                 }
             });
             if let Some(window) = weak.upgrade() {
-                let _ = window.activate_action("app.refresh-sidebar", None);
+                let _ = WidgetExt::activate_action(&window, "app.refresh-sidebar", None);
             }
         });
         container.append(&toggle);

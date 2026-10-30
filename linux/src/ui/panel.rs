@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use gtk::prelude::*;
+use adw::prelude::*;
 use uuid::Uuid;
 
 use crate::app::App;
@@ -53,5 +53,5 @@ pub fn show_transcript(_id: Uuid, agent: &crate::claude::SubAgent) {
     let window = gtk::gio::Application::default()
         .and_then(|a| a.downcast::<gtk::Application>().ok())
         .and_then(|a| a.active_window());
-    adw::prelude::AdwDialogExt::present(&dialog, window.as_ref());
+    dialog.present(window.as_ref());
 }
