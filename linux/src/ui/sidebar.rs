@@ -611,10 +611,11 @@ pub fn connect(app: &Rc<App>) {
             None => empty_menu(),
         };
         let sidebar = &app.ui.sidebar;
+        let point = gtk::graphene::Point::new(x as f32, y as f32);
         let (x, y) = sidebar
             .list
-            .translate_coordinates(&sidebar.root, x, y)
-            .unwrap_or((x, y));
+            .compute_point(&sidebar.root, &point)
+            .map_or((x, y), |p| (p.x() as f64, p.y() as f64));
         let menu = &sidebar.menu;
         menu.set_menu_model(Some(&model));
         menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
