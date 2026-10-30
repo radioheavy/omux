@@ -11,6 +11,7 @@ use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 use serde_json::Value;
 use uuid::Uuid;
+use vte::prelude::*;
 use webkit6::prelude::*;
 
 use crate::app::App;
@@ -107,16 +108,15 @@ fn mentioned_urls(app: &App, id: Uuid) -> Vec<String> {
     let Some(term) = app.terminal(id) else {
         return Vec::new();
     };
-    let Some(adjustment) = vte::prelude::TerminalExt::vadjustment(&term.widget) else {
+    let Some(adjustment) = term.widget.vadjustment() else {
         return Vec::new();
     };
-    let (text, _) = vte::prelude::TerminalExt::text_range_format(
-        &term.widget,
+    let (text, _) = term.widget.text_range_format(
         vte::Format::Text,
         adjustment.lower() as i64,
         0,
         adjustment.upper() as i64,
-        vte::prelude::TerminalExt::column_count(&term.widget),
+        term.widget.column_count(),
     );
     text.map(|t| crate::mentions::local_urls(&t))
         .unwrap_or_default()
