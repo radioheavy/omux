@@ -9,6 +9,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use uuid::Uuid;
+use vte::prelude::*;
 
 use crate::app::App;
 use crate::term::SessionTerminal;

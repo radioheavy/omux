@@ -129,7 +129,7 @@ impl Header {
         self.update_status(app);
     }
 
-    pub fn update_status(&self, app: &Rc<App>) {
+    pub fn update_status(&self, app: &App) {
         let Some(id) = app.selected.get() else { return };
         let Some((group, tab)) = app.tab(id) else {
             return;

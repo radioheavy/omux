@@ -11,6 +11,7 @@ use std::time::Duration;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use uuid::Uuid;
+use vte::prelude::*;
 
 use crate::model::{SessionProvider, TabGroup, TabItem, Workspace};
 use crate::notify;

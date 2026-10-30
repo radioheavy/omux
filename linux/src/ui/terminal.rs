@@ -26,12 +26,7 @@ pub fn configure(app: &Rc<App>, id: Uuid, terminal: &Rc<SessionTerminal>) {
     popover.set_parent(&terminal.widget);
     let click = gtk::GestureClick::new();
     click.set_button(3);
-    let widget = terminal.widget.downgrade();
     click.connect_pressed(move |gesture, _, x, y| {
-        // Programs that track the mouse get the click themselves.
-        if widget.upgrade().is_some_and(|w| w.is_mouse_tracking()) {
-            return;
-        }
         gesture.set_state(gtk::EventSequenceState::Claimed);
         popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
         popover.popup();

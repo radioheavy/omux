@@ -175,7 +175,7 @@ impl Sidebar {
         self.syncing.set(false);
     }
 
-    pub fn update_row(&self, app: &Rc<App>, id: Uuid) {
+    pub fn update_row(&self, app: &App, id: Uuid) {
         let rows = self.rows.borrow();
         let Some(row) = rows.get(&id) else { return };
         let Some((group, tab)) = app.tab(id) else {
@@ -221,7 +221,7 @@ impl Sidebar {
 }
 
 /// The second line: branch for worktree sessions, status, agent count.
-fn secondary_line(app: &Rc<App>, _group: &TabGroup, tab: &TabItem, rt: &TabRuntime) -> String {
+fn secondary_line(app: &App, _group: &TabGroup, tab: &TabItem, rt: &TabRuntime) -> String {
     let show_folder = app.settings.borrow().show_folder_path;
     let mut parts = Vec::new();
     if let Some(worktree) = &tab.worktree {

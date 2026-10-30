@@ -55,7 +55,7 @@ pub fn interrupt(app: &Rc<App>, id: Uuid) {
 pub fn answer(_app: &Rc<App>, _id: Uuid, _allow: bool) {}
 
 /// The pending approval's detail text, if Codex is waiting for one.
-pub fn pending_approval(_app: &Rc<App>, _id: Uuid) -> Option<String> {
+pub fn pending_approval(_app: &App, _id: Uuid) -> Option<String> {
     None
 }
 
