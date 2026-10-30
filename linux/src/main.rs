@@ -1,6 +1,18 @@
+// The port is being built up milestone by milestone (docs/ROADMAP.md); parts
+// of the core are not wired into the UI yet.
+#![allow(dead_code)]
+
+mod model;
+mod persistence;
+mod session_env;
+mod settings;
+mod swift_json;
+mod term;
+
 use adw::prelude::*;
-use gtk::{gio, glib};
-use vte::prelude::*;
+use gtk::glib;
+
+use term::SessionTerminal;
 
 const APP_ID: &str = "net.pf1.omux";
 
@@ -11,13 +23,11 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_window(app: &adw::Application) {
-    let terminal = vte::Terminal::new();
-    terminal.set_vexpand(true);
-    spawn_shell(&terminal);
+    let terminal = SessionTerminal::new();
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.append(&adw::HeaderBar::new());
-    content.append(&terminal);
+    content.append(&terminal.widget);
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -27,34 +37,19 @@ fn build_window(app: &adw::Application) {
         .content(&content)
         .build();
 
-    // Closing the shell closes the window, like a plain terminal for now.
     let win = window.downgrade();
-    terminal.connect_child_exited(move |_, _| {
-        if let Some(win) = win.upgrade() {
+    terminal.set_handler(move |event| {
+        if let (term::TermEvent::Exited, Some(win)) = (&event, win.upgrade()) {
             win.close();
         }
     });
+    let env = session_env::build(session_env::Extra { codex_token: None, repo: None });
+    if let Err(err) = terminal.spawn(&session_env::shell(), &persistence::home_dir(), env) {
+        eprintln!("omux: could not start shell: {err}");
+    }
 
     window.present();
-    terminal.grab_focus();
-}
-
-fn spawn_shell(terminal: &vte::Terminal) {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
-    let home = glib::home_dir();
-    terminal.spawn_async(
-        vte::PtyFlags::DEFAULT,
-        home.to_str(),
-        &[&shell],
-        &[],
-        glib::SpawnFlags::DEFAULT,
-        || {},
-        -1,
-        None::<&gio::Cancellable>,
-        |result| {
-            if let Err(err) = result {
-                eprintln!("omux: could not start shell: {err}");
-            }
-        },
-    );
+    terminal.widget.grab_focus();
+    // Keep the terminal alive as long as the window.
+    unsafe { window.set_data("omux-terminal", terminal) };
 }
