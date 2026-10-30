@@ -210,7 +210,7 @@ impl App {
         if self.find(id).is_none() {
             return;
         }
-        self.selected.set(Some(id));
+        let previous = self.selected.replace(Some(id));
         self.ws.borrow_mut().selected_tab_id = Some(id);
         self.schedule_save();
         if self.terminal(id).is_none() {
@@ -227,8 +227,14 @@ impl App {
             }
         });
         self.refresh_sidebar_selection();
+        // Agent rows and counts differ between the selected session and others.
+        if let Some(previous) = previous.filter(|p| *p != id) {
+            self.refresh_session(previous);
+        }
+        self.refresh_session(id);
         self.ui.header.update(self);
         crate::ui::panel::selection_changed(self);
+        crate::usage::redraw(self);
     }
 
     pub fn clear_attention(&self, id: Uuid) {

@@ -2,7 +2,7 @@
   "groups": [
     {
       "command": "claude",
-      "directory": "/tmp",
+      "directory": "/tmp/omux-demo",
       "id": "6B1E2C1A-0A55-4C0E-9C3B-2B5A9E1D0001",
       "isCollapsed": false,
       "name": "omux",

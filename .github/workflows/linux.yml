@@ -35,6 +35,14 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends xvfb imagemagick dbus-x11 fonts-dejavu-core adwaita-icon-theme librsvg2-common
           mkdir -p "$RUNNER_TEMP/ws" "$RUNNER_TEMP/shots"
+          # A small repository with changes, for the Files and Changes tabs.
+          git init -q -b main /tmp/omux-demo && cd /tmp/omux-demo
+          mkdir src && printf '# Demo\n\nA *small* project.\n' > README.md
+          printf 'fn main() {\n    println!("hi");\n}\n' > src/main.rs
+          git add -A && git -c user.name=ci -c user.email=ci@example.com commit -qm init
+          printf 'fn main() {\n    println!("hello, omux");\n    run();\n}\n' > src/main.rs
+          printf '## Notes\n\n- first\n- second\n' > NOTES.md
+          cd "$GITHUB_WORKSPACE/linux"
           cp -r tests/fixtures/workspace/. "$RUNNER_TEMP/ws/" 2>/dev/null || true
           export OMUX_WORKSPACE_DIRECTORY="$RUNNER_TEMP/ws" GSK_RENDERER=cairo RUST_BACKTRACE=1
           xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- sh -c '
@@ -43,6 +51,11 @@ jobs:
             import -window root "$RUNNER_TEMP/shots/main.png"
             act() { gdbus call --session --dest net.pf1.omux --object-path /net/pf1/omux \
               --method org.gtk.Actions.Activate "$1" "[]" "{}" > /dev/null; sleep 2; }
+            act toggle-panel
+            import -window root "$RUNNER_TEMP/shots/files.png"
+            gdbus call --session --dest net.pf1.omux --object-path /net/pf1/omux \
+              --method org.gtk.Actions.Activate panel-tab "[<\"changes\">]" "{}" > /dev/null; sleep 3
+            import -window root "$RUNNER_TEMP/shots/changes.png"
             act settings
             import -window root "$RUNNER_TEMP/shots/settings.png"
             kill $pid || true'
