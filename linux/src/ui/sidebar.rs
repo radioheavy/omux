@@ -93,6 +93,27 @@ impl Sidebar {
         section.append(Some("New Session in Worktree…"), Some("app.new-worktree"));
         menu.append_section(None, &section);
         let section = gio::Menu::new();
+        let session = gio::Menu::new();
+        for (label, action) in [
+            ("Rename", "app.rename"),
+            ("Edit Session…", "app.edit-session"),
+            ("Start or Continue Session", "app.start"),
+            ("Restart Session", "app.restart"),
+            ("Interrupt (Ctrl-C)", "app.interrupt"),
+            ("Kill Session", "app.kill"),
+            ("Close Session", "app.close-session"),
+        ] {
+            session.append(Some(label), Some(action));
+        }
+        section.append_submenu(Some("Session"), &session);
+        let view = gio::Menu::new();
+        view.append(Some("Files Panel"), Some("app.toggle-panel"));
+        view.append(Some("Files"), Some("app.panel-tab::files"));
+        view.append(Some("Changes"), Some("app.panel-tab::changes"));
+        view.append(Some("Browser"), Some("app.panel-tab::browser"));
+        view.append(Some("Next Session"), Some("app.next-session"));
+        view.append(Some("Previous Session"), Some("app.prev-session"));
+        section.append_submenu(Some("View"), &view);
         section.append(Some("Jump to Session…"), Some("app.quick-switch"));
         section.append(Some("Settings"), Some("app.settings"));
         section.append(Some("Keyboard Shortcuts"), Some("app.shortcuts"));
@@ -101,6 +122,7 @@ impl Sidebar {
         section.append(Some("About omux"), Some("app.about"));
         menu.append_section(None, &section);
         let section = gio::Menu::new();
+        section.append(Some("Close Window"), Some("app.close-window"));
         section.append(Some("Quit"), Some("app.quit"));
         menu.append_section(None, &section);
         let menu_button = gtk::MenuButton::builder()
@@ -593,6 +615,26 @@ pub fn connect(app: &Rc<App>) {
             app.refresh_sidebar();
         } else {
             app.select(id);
+        }
+    });
+
+    // Arrow keys move the selection; follow it like a click.
+    let weak = Rc::downgrade(app);
+    sidebar.list.connect_row_selected(move |_, row| {
+        let (Some(app), Some(row)) = (weak.upgrade(), row) else {
+            return;
+        };
+        if app.ui.sidebar.syncing.get() {
+            return;
+        }
+        let name = row.widget_name();
+        if let Some(id) = name
+            .strip_prefix("tab:")
+            .and_then(|id| Uuid::parse_str(id).ok())
+        {
+            if app.selected.get() != Some(id) {
+                app.select(id);
+            }
         }
     });
 

@@ -31,7 +31,9 @@ pub struct App {
     pub runtime: RefCell<HashMap<Uuid, TabRuntime>>,
     pub terminals: RefCell<HashMap<Uuid, Rc<SessionTerminal>>>,
     pub selected: Cell<Option<Uuid>>,
-    save_source: RefCell<Option<glib::SourceId>>,
+    /// The pending debounced save. The timer clears it when it fires, so a
+    /// fired source is never removed (glib panics on that).
+    save_source: Rc<RefCell<Option<glib::SourceId>>>,
     /// Ids of the sessions whose name is being edited in the sidebar.
     pub renaming: Cell<Option<Uuid>>,
     pub renaming_group: Cell<Option<Uuid>>,
@@ -59,15 +61,21 @@ impl App {
             runtime: RefCell::new(HashMap::new()),
             terminals: RefCell::new(HashMap::new()),
             selected: Cell::new(None),
-            save_source: RefCell::new(None),
+            save_source: Rc::new(RefCell::new(None)),
             renaming: Cell::new(None),
             renaming_group: Cell::new(None),
         });
 
         // Restored sessions stay stopped until started, unless auto-resume is on.
         let ids = app.all_tab_ids();
+        let resume = app.settings.borrow().auto_resume;
         for id in &ids {
-            app.runtime.borrow_mut().insert(*id, TabRuntime::stopped());
+            let rt = if resume {
+                TabRuntime::default()
+            } else {
+                TabRuntime::stopped()
+            };
+            app.runtime.borrow_mut().insert(*id, rt);
         }
         let selection = {
             let ws = app.ws.borrow();
@@ -178,6 +186,10 @@ impl App {
 
     /// Changes a session's live state and redraws it if anything changed.
     pub fn update_rt(&self, id: Uuid, change: impl FnOnce(&mut TabRuntime)) {
+        // A late update for a closed session must not bring its state back.
+        if self.find(id).is_none() {
+            return;
+        }
         let changed = {
             let mut runtime = self.runtime.borrow_mut();
             let rt = runtime.entry(id).or_default();
@@ -393,11 +405,13 @@ impl App {
         for (i, id) in ids.into_iter().enumerate() {
             let weak = Rc::downgrade(self);
             glib::timeout_add_local_once(Duration::from_millis(250 * i as u64), move || {
-                if let Some(app) = weak.upgrade() {
-                    app.remove_terminal(id);
-                    app.create_terminal(id, None);
-                    app.refresh_session(id);
+                let Some(app) = weak.upgrade() else { return };
+                // Already started (selected, or clicked meanwhile) or closed.
+                if app.terminal(id).is_some() || app.find(id).is_none() {
+                    return;
                 }
+                app.create_terminal(id, None);
+                app.refresh_session(id);
             });
         }
     }
@@ -413,7 +427,7 @@ impl App {
         if let Some(term) = &live {
             if provider == SessionProvider::Codex
                 && rt.status_state == Some(State::Error)
-                && !rt.agent_connected
+                && !crate::codex::is_connected(id)
             {
                 return self.restart(id);
             }
@@ -457,7 +471,9 @@ impl App {
             None => {
                 self.remove_terminal(id);
                 self.create_terminal(id, Some(command));
-                self.ui.show_terminal(self, id);
+                if self.selected.get() == Some(id) {
+                    self.ui.show_terminal(self, id);
+                }
             }
         }
         self.refresh_busy_later(id);
@@ -521,13 +537,12 @@ impl App {
         let codex = self.rt(id).provider == Some(SessionProvider::Codex);
         self.update_rt(id, |rt| {
             if codex {
+                // The protocol decides busy; the TUI leaving the foreground
+                // means it is no longer attached.
                 if !busy {
                     rt.agent_connected = false;
                 }
-                // The protocol decides busy for a connected Codex session.
-                if rt.agent_connected {
-                    return;
-                }
+                return;
             }
             rt.busy = busy;
         });
@@ -544,7 +559,7 @@ impl App {
         self.terminals
             .borrow()
             .iter()
-            .filter(|(id, t)| t.is_running() && !self.rt(**id).exited && t.is_busy())
+            .filter(|(id, t)| t.is_running() && !self.rt(**id).exited)
             .count()
     }
 
@@ -786,10 +801,17 @@ impl App {
     }
 
     pub fn close_tab(self: &Rc<Self>, id: Uuid) {
+        self.close_tab_selecting(id, true);
+    }
+
+    /// `reselect` false when the siblings are about to close too (deleting a
+    /// project), so no shell is started for them.
+    fn close_tab_selecting(self: &Rc<Self>, id: Uuid, reselect: bool) {
         let Some((gi, ti)) = self.find(id) else {
             return;
         };
         crate::codex::close(self, id);
+        crate::codex::forget(id);
         self.remove_terminal(id);
         self.runtime.borrow_mut().remove(&id);
         self.gtk_app.withdraw_notification(&id.to_string());
@@ -807,7 +829,7 @@ impl App {
         if self.selected.get() == Some(id) {
             self.selected.set(None);
             self.ws.borrow_mut().selected_tab_id = None;
-            match next {
+            match next.filter(|_| reselect) {
                 Some(next) => self.select(next),
                 None => self.ui.show_empty(),
             }
@@ -827,11 +849,23 @@ impl App {
             .iter()
             .map(|t| t.id)
             .collect();
+        let was_selected = self.selected.get().is_some_and(|s| ids.contains(&s));
         for id in ids {
-            self.close_tab(id);
+            self.close_tab_selecting(id, false);
         }
         if let Some(gi) = self.group_index(group_id) {
             self.ws.borrow_mut().groups.remove(gi);
+        }
+        if was_selected {
+            let next = self
+                .ws
+                .borrow()
+                .groups
+                .iter()
+                .find_map(|g| g.tabs.first().map(|t| t.id));
+            if let Some(next) = next {
+                self.select(next);
+            }
         }
         if self.ws.borrow().groups.is_empty() {
             self.new_group();
@@ -908,13 +942,15 @@ impl App {
         let Some(from) = ws.groups.iter().position(|g| g.id == group_id) else {
             return;
         };
-        let group = ws.groups.remove(from);
+        // Like List.onMove: the project takes the target's place, so moving
+        // down onto the next project puts it after that project.
         let to = ws
             .groups
             .iter()
             .position(|g| g.id == before)
             .unwrap_or(ws.groups.len());
-        ws.groups.insert(to, group);
+        let group = ws.groups.remove(from);
+        ws.groups.insert(to.min(ws.groups.len()), group);
         drop(ws);
         self.schedule_save();
         self.refresh_sidebar();
@@ -968,7 +1004,9 @@ impl App {
             source.remove();
         }
         let ws = self.ws.clone();
+        let pending = self.save_source.clone();
         let source = glib::timeout_add_local_once(Duration::from_millis(400), move || {
+            pending.borrow_mut().take();
             persistence::save_workspace(&ws.borrow());
         });
         *self.save_source.borrow_mut() = Some(source);

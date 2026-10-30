@@ -246,6 +246,7 @@ pub fn rearm(app: &Rc<App>) {
 
 /// Fetches Claude usage on a worker thread, then redraws.
 pub fn refresh(app: &Rc<App>) {
+    crate::codex::refresh_usage();
     let busy = STATE.with(|s| std::mem::replace(&mut s.borrow_mut().loading, true));
     if busy {
         return;

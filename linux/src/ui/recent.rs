@@ -152,10 +152,15 @@ pub fn present(app: &Rc<App>) {
         error: RefCell::new(None),
     });
 
+    // A slow load (Codex may start a server) must not replace a newer one.
+    let generation = Rc::new(std::cell::Cell::new(0u64));
     let reload = {
         let sheet = sheet.clone();
         let weak = Rc::downgrade(app);
         move || {
+            let current = generation.get() + 1;
+            generation.set(current);
+            let generation = generation.clone();
             let provider = if sheet.codex.is_active() {
                 SessionProvider::Codex
             } else {
@@ -170,6 +175,9 @@ pub fn present(app: &Rc<App>) {
             let weak = weak.clone();
             glib::spawn_future_local(async move {
                 let Ok(result) = rx.recv().await else { return };
+                if generation.get() != current {
+                    return;
+                }
                 match result {
                     Ok(items) => {
                         *sheet.items.borrow_mut() = items;
@@ -264,7 +272,9 @@ fn fill(app: &Rc<App>, sheet: &Rc<Sheet>) {
         .filter(|(_, c)| {
             query.is_empty()
                 || c.prompt.to_lowercase().contains(&query)
-                || c.cwd.to_lowercase().contains(&query)
+                || abbreviate_home(Path::new(&c.cwd))
+                    .to_lowercase()
+                    .contains(&query)
         })
         .collect();
     if matches.is_empty() {

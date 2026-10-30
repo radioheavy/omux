@@ -111,7 +111,12 @@ fn first_prompt(path: &Path) -> Option<(String, String)> {
         .take(128 * 1024)
         .read_to_end(&mut head)
         .ok()?;
-    let text = std::str::from_utf8(&head).ok()?;
+    // The 128 KiB cut can split a multi-byte character (Turkish, CJK):
+    // keep the valid part instead of dropping the conversation.
+    let text = match std::str::from_utf8(&head) {
+        Ok(text) => text,
+        Err(err) => std::str::from_utf8(&head[..err.valid_up_to()]).ok()?,
+    };
     text.split('\n').find_map(|line| {
         let object: Value = serde_json::from_str(line).ok()?;
         if object.get("type")?.as_str()? != "user" {

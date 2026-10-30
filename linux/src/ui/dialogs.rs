@@ -194,6 +194,9 @@ pub fn edit_session(app: &Rc<App>, id: Uuid) {
         let choice = SESSION_CHOICES[command.selected() as usize].0;
         let custom_text = custom.text().trim().to_string();
         let start_fresh = fresh.is_active();
+        let group_provider = app
+            .tab(id)
+            .map_or(SessionProvider::Claude, |(g, _)| g.provider);
         let name = trimmed(&name);
         let folder = trimmed(&folder);
         app.update_tab(id, |tab| {
@@ -216,7 +219,8 @@ pub fn edit_session(app: &Rc<App>, id: Uuid) {
             tab.command = command;
             tab.provider = provider;
             if start_fresh {
-                match provider.unwrap_or(SessionProvider::Claude) {
+                let resolved = provider.unwrap_or(group_provider);
+                match resolved {
                     SessionProvider::Codex => tab.codex_thread_id = None,
                     _ => tab.claude_session_id = Uuid::new_v4(),
                 }

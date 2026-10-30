@@ -12,6 +12,7 @@ use crate::usage::Usage;
 thread_local! {
     /// The usage row of an open welcome sheet, updated when a check returns.
     static USAGE_ROW: RefCell<Option<glib::WeakRef<adw::ActionRow>>> = const { RefCell::new(None) };
+    static CODEX_ROW: RefCell<Option<glib::WeakRef<adw::ActionRow>>> = const { RefCell::new(None) };
 }
 
 /// `command -v <tool>` in the login shell, so the user's PATH applies.
@@ -100,6 +101,11 @@ pub fn present(app: &Rc<App>) {
     row.add_suffix(&check);
     usage.add(&row);
     USAGE_ROW.with(|r| *r.borrow_mut() = Some(row.downgrade()));
+    let codex = adw::ActionRow::new();
+    codex.set_title("Codex plan limits");
+    set_usage(&codex, crate::codex::usage(app).0);
+    usage.add(&codex);
+    CODEX_ROW.with(|r| *r.borrow_mut() = Some(codex.downgrade()));
     page.add(&usage);
 
     let first = adw::PreferencesGroup::new();
@@ -146,9 +152,13 @@ fn set_usage(row: &adw::ActionRow, usage: Option<Usage>) {
     }
 }
 
-pub fn usage_changed(_app: &Rc<App>) {
+pub fn usage_changed(app: &Rc<App>) {
     let row = USAGE_ROW.with(|r| r.borrow().as_ref().and_then(|w| w.upgrade()));
     if let Some(row) = row {
         set_usage(&row, crate::usage::claude());
+    }
+    let codex = CODEX_ROW.with(|r| r.borrow().as_ref().and_then(|w| w.upgrade()));
+    if let Some(codex) = codex {
+        set_usage(&codex, crate::codex::usage(app).0);
     }
 }

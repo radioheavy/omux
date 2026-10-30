@@ -25,6 +25,9 @@ use crate::ui::panel::background;
 struct Session {
     client: TabClient,
     starting: bool,
+    /// Bumped by every start and close, so a start that finishes after its
+    /// session was closed, killed or restarted is recognised as stale.
+    generation: u64,
     /// A worktree setup command typed before the TUI once the server is ready.
     setup: Option<String>,
     agents: Vec<CodexAgent>,
@@ -35,6 +38,8 @@ struct Session {
 struct Codex {
     sessions: HashMap<Uuid, Session>,
     usage: Option<Result<CodexUsage, String>>,
+    /// Kept across errors, as on the Mac.
+    plan: Option<String>,
     usage_checked: Option<Instant>,
 }
 
@@ -69,7 +74,17 @@ pub fn set_pending_setup(_app: &Rc<App>, id: Uuid, setup: String) {
 }
 
 pub fn is_starting(_app: &Rc<App>, id: Uuid) -> bool {
-    with(id, |s| s.starting)
+    CODEX.with(|c| c.borrow().sessions.get(&id).is_some_and(|s| s.starting))
+}
+
+/// Whether the session's server is up and its protocol client connected.
+pub fn is_connected(id: Uuid) -> bool {
+    CODEX.with(|c| {
+        c.borrow()
+            .sessions
+            .get(&id)
+            .is_some_and(|s| s.client.is_ready())
+    })
 }
 
 fn map_state(state: CodexState) -> State {
@@ -82,6 +97,7 @@ fn map_state(state: CodexState) -> State {
     }
 }
 
+/// The protocol decides a Codex session's status and whether it is busy.
 fn set_status(
     app: &Rc<App>,
     id: Uuid,
@@ -89,24 +105,43 @@ fn set_status(
     kind: Option<String>,
     detail: Option<String>,
 ) {
+    if app.find(id).is_none() {
+        return;
+    }
     app.apply_status(id, |rt| {
         rt.status_state = state;
         rt.status_kind = kind;
         rt.status_detail = detail;
         rt.status_children.clear();
-        if rt.agent_connected {
-            rt.busy = matches!(state, Some(State::Working | State::Blocked));
-        }
+        rt.busy = matches!(state, Some(State::Working | State::Blocked));
     });
+}
+
+fn current(app: &App, id: Uuid, generation: u64) -> bool {
+    app.find(id).is_some()
+        && app.terminal(id).is_some()
+        && CODEX.with(|c| {
+            c.borrow()
+                .sessions
+                .get(&id)
+                .is_some_and(|s| s.generation == generation)
+        })
 }
 
 /// Connects to (or starts) the session's conversation, then types the
 /// command that attaches the Codex TUI to the session's server.
 pub fn start(app: &Rc<App>, id: Uuid, dir: &Path) {
     let Some((_, tab)) = app.tab(id) else { return };
-    if with(id, |s| std::mem::replace(&mut s.starting, true)) {
+    let Some(generation) = with(id, |s| {
+        if s.starting {
+            return None;
+        }
+        s.starting = true;
+        s.generation += 1;
+        Some(s.generation)
+    }) else {
         return;
-    }
+    };
     set_status(
         app,
         id,
@@ -120,10 +155,18 @@ pub fn start(app: &Rc<App>, id: Uuid, dir: &Path) {
     let saved = tab.codex_thread_id.clone();
     let name = tab.name.clone();
     let weak = Rc::downgrade(app);
+    let stale_client = client.clone();
     background(
         move || client.start(&dir, saved, &name, env!("CARGO_PKG_VERSION"), updates),
         move |result| {
             let Some(app) = weak.upgrade() else { return };
+            if !current(&app, id, generation) {
+                // Closed, killed or restarted while connecting.
+                if result.is_ok() {
+                    stale_client.close();
+                }
+                return;
+            }
             let setup = with(id, |s| {
                 s.starting = false;
                 s.setup.take()
@@ -152,6 +195,9 @@ pub fn start(app: &Rc<App>, id: Uuid, dir: &Path) {
     glib::spawn_future_local(async move {
         while let Ok(update) = inbox.recv().await {
             let Some(app) = weak.upgrade() else { break };
+            if !current(&app, id, generation) {
+                break;
+            }
             handle(&app, id, update);
         }
     });
@@ -174,40 +220,73 @@ fn handle(app: &Rc<App>, id: Uuid, update: Update) {
         }
         Update::Disconnected(_) => app.update_rt(id, |rt| rt.agent_connected = false),
         Update::Usage(usage) => {
-            CODEX.with(|c| c.borrow_mut().usage = Some(Ok(usage)));
+            CODEX.with(|c| {
+                let mut c = c.borrow_mut();
+                if usage.plan.is_some() {
+                    c.plan = usage.plan.clone();
+                }
+                c.usage = Some(Ok(usage));
+            });
             crate::usage::redraw(app);
         }
     }
 }
 
+/// Stops the session's server and forgets any start in progress.
 pub fn close(_app: &Rc<App>, id: Uuid) {
-    let existing = CODEX.with(|c| c.borrow().sessions.get(&id).map(|s| s.client.clone()));
+    let existing = CODEX.with(|c| {
+        c.borrow_mut().sessions.get_mut(&id).map(|s| {
+            s.generation += 1;
+            s.starting = false;
+            s.agents.clear();
+            s.client.clone()
+        })
+    });
     if let Some(client) = existing {
         client.close();
     }
-    with(id, |s| {
-        s.agents.clear();
-        s.starting = false;
-    });
 }
 
-/// Interrupts every running turn of the session (root and subagents).
+/// After the session is closed for good.
+pub fn forget(id: Uuid) {
+    CODEX.with(|c| c.borrow_mut().sessions.remove(&id));
+}
+
+fn alert(app: &Rc<App>, heading: &str, err: &str) {
+    crate::ui::dialogs::info(app, heading, err);
+}
+
+/// Interrupts every running turn of the session (root and subagents). A
+/// start still connecting is cancelled instead, as on the Mac.
 pub fn interrupt(app: &Rc<App>, id: Uuid) {
+    if is_starting(app, id) {
+        app.kill(id);
+        return;
+    }
     let client = client(id);
     if !client.is_ready() {
-        // Still starting, or the TUI runs unmanaged: stop it like a shell.
+        // The TUI runs without its server: stop it like any program.
         if let Some(term) = app.terminal(id) {
             term.write(b"\x03");
         }
         return;
     }
-    background(move || client.interrupt(), |_| {});
+    let weak = Rc::downgrade(app);
+    background(
+        move || client.interrupt(),
+        move |result| {
+            if let (Err(err), Some(app)) = (result, weak.upgrade()) {
+                alert(&app, "Couldn't interrupt Codex", &err.to_string());
+            }
+        },
+    );
 }
 
 /// Interrupts, closes the server and waits for it to exit (before a
 /// worktree is deleted).
 pub fn detach(id: Uuid, done: impl FnOnce(Result<(), String>) + 'static) {
     let client = client(id);
+    with(id, |s| s.generation += 1);
     background(move || client.detach().map_err(|e| e.to_string()), done);
 }
 
@@ -220,11 +299,13 @@ pub fn answer(app: &Rc<App>, id: Uuid, allow: bool) {
     let weak = Rc::downgrade(app);
     background(
         move || client.answer(allow),
-        move |_| {
+        move |result| {
             with(id, |s| s.answering = false);
-            if let Some(app) = weak.upgrade() {
-                app.refresh_session(id);
+            let Some(app) = weak.upgrade() else { return };
+            if let Err(err) = result {
+                alert(&app, "Couldn't answer Codex", &err.to_string());
             }
+            app.refresh_session(id);
         },
     );
 }
@@ -270,6 +351,11 @@ pub fn recent() -> Result<Vec<crate::ui::recent::Conversation>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Checks Codex usage now (a click on the usage strip).
+pub fn refresh_usage() {
+    CODEX.with(|c| c.borrow_mut().usage_checked = None);
+}
+
 /// The selected Codex session's plan limits and plan name. Checks again
 /// when the last check is older than the usage interval (30 s at least).
 pub fn usage(app: &App) -> (Option<crate::usage::Usage>, Option<String>) {
@@ -284,28 +370,41 @@ pub fn usage(app: &App) -> (Option<crate::usage::Usage>, Option<String>) {
         background(
             || catalog().usage().map_err(|e| e.to_string()),
             |result| {
-                CODEX.with(|c| c.borrow_mut().usage = Some(result));
+                CODEX.with(|c| {
+                    let mut c = c.borrow_mut();
+                    if let Ok(usage) = &result {
+                        if usage.plan.is_some() {
+                            c.plan = usage.plan.clone();
+                        }
+                    }
+                    c.usage = Some(result);
+                });
                 if let Some(app) = crate::ui::files::app() {
                     crate::usage::redraw(&app);
+                    crate::ui::welcome::usage_changed(&app);
                 }
             },
         );
     }
-    CODEX.with(|c| match c.borrow().usage.clone() {
-        Some(Ok(usage)) => {
-            let limits = usage
-                .limits
-                .iter()
-                .map(|l| crate::usage::Limit {
-                    label: l.label.clone(),
-                    percent: l.percent,
-                    resets_at: l.resets_at,
-                })
-                .collect();
-            (Some(crate::usage::Usage::Limits(limits)), usage.plan)
+    CODEX.with(|c| {
+        let c = c.borrow();
+        let plan = c.plan.clone();
+        match c.usage.clone() {
+            Some(Ok(usage)) => {
+                let limits = usage
+                    .limits
+                    .iter()
+                    .map(|l| crate::usage::Limit {
+                        label: l.label.clone(),
+                        percent: l.percent,
+                        resets_at: l.resets_at,
+                    })
+                    .collect();
+                (Some(crate::usage::Usage::Limits(limits)), plan)
+            }
+            Some(Err(err)) => (Some(crate::usage::Usage::Problem(err.clone(), err)), plan),
+            None => (None, plan),
         }
-        Some(Err(err)) => (Some(crate::usage::Usage::Problem(err.clone(), err)), None),
-        None => (None, None),
     })
 }
 
@@ -326,10 +425,11 @@ pub fn header_agents(_app: &App, id: Uuid, container: &gtk::Box) {
     if list.is_empty() {
         return;
     }
-    let label = if list.len() == 1 {
-        "1 agent".to_string()
-    } else {
-        format!("{} agents", list.len())
+    let running = list.iter().filter(|a| !a.finished).count();
+    let label = match running {
+        0 => "agents done".to_string(),
+        1 => "1 agent".to_string(),
+        n => format!("{n} agents"),
     };
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     content.append(&gtk::Image::from_icon_name("system-users-symbolic"));
@@ -398,11 +498,17 @@ fn show_transcript(id: Uuid, thread: &str, name: &str) {
 
     let thread = thread.to_string();
     let last = Rc::new(RefCell::new(String::new()));
+    let in_flight = Rc::new(std::cell::Cell::new(false));
     let refresh = move || {
         let alive = holder.root().is_some();
         if !alive {
             return false;
         }
+        // One request at a time: a stuck server must not pile up workers.
+        if in_flight.replace(true) {
+            return true;
+        }
+        let done = in_flight.clone();
         let client = client(id);
         let thread = thread.clone();
         let holder = holder.downgrade();
@@ -410,8 +516,13 @@ fn show_transcript(id: Uuid, thread: &str, name: &str) {
         background(
             move || client.transcript(&thread),
             move |result| {
-                let (Some(holder), Ok(text)) = (holder.upgrade(), result) else {
+                done.set(false);
+                let Some(holder) = holder.upgrade() else {
                     return;
+                };
+                let text = match result {
+                    Ok(text) => text,
+                    Err(err) => format!("_{err}_"),
                 };
                 if *last.borrow() == text || text.is_empty() {
                     return;

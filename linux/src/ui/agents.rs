@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use adw::prelude::*;
@@ -167,6 +167,25 @@ pub fn update_sidebar(app: &App, id: Uuid, container: &gtk::Box) {
     crate::ui::worktree_actions::sidebar_extras(app, id, container);
     container.set_visible(container.first_child().is_some());
     let selected = app.selected.get() == Some(id);
+    if selected {
+        for agent in crate::codex::agents(id) {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let dot = crate::ui::sidebar::dot();
+            crate::ui::sidebar::set_dot(&dot, Some(if agent.finished { "green" } else { "blue" }));
+            row.append(&dot);
+            let name = gtk::Label::new(Some(&agent.name));
+            name.add_css_class("omux-status");
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            name.set_xalign(0.0);
+            name.set_hexpand(true);
+            row.append(&name);
+            let state = gtk::Label::new(Some(&agent.state));
+            state.add_css_class("omux-status");
+            row.append(&state);
+            container.append(&row);
+            container.set_visible(true);
+        }
+    }
     let mut list: Vec<SubAgent> = agents(id);
     if !selected {
         list.retain(|a| a.blocked);
@@ -257,7 +276,22 @@ pub fn update_header(app: &App, id: Uuid, container: &gtk::Box) {
             .build();
         button.add_css_class("flat");
         button.set_create_popup_func(move |button| {
-            button.set_popover(Some(&agent_list(id)));
+            let popover = agent_list(id);
+            // Elapsed times tick and states change while the list is open.
+            let weak = popover.downgrade();
+            glib::timeout_add_local(Duration::from_secs(1), move || {
+                let Some(popover) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                if popover.is_visible() {
+                    if let Some(fresh) = agent_list(id).child() {
+                        fresh.unparent();
+                        popover.set_child(Some(&fresh));
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
+            button.set_popover(Some(&popover));
         });
         container.append(&button);
     }
@@ -354,65 +388,79 @@ pub fn transcript_view(path: PathBuf) -> gtk::Widget {
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .build();
-    let state = Rc::new(RefCell::new((JsonlReader::default(), Vec::<Entry>::new())));
+    // The file is read on a worker thread; a large transcript would
+    // otherwise stall the UI every 1.5 s.
+    let reader = Arc::new(Mutex::new(JsonlReader::default()));
+    let entries: Rc<RefCell<Vec<Entry>>> = Rc::default();
     let tools: Rc<RefCell<HashMap<String, usize>>> = Rc::default();
+    let loading = Rc::new(Cell::new(false));
     let load = {
         let list = list.clone();
         let scroller = scroller.clone();
-        let state = state.clone();
-        let loading = Rc::new(Cell::new(false));
         move || {
             if loading.replace(true) {
                 return;
             }
-            let mut state = state.borrow_mut();
-            let (reader, entries) = &mut *state;
-            let objects = reader.read(&path);
-            let had_task = !entries.is_empty();
-            let events = crate::claude::transcript_events(&objects, had_task);
-            if !events.is_empty() {
-                for event in events {
-                    match event {
-                        TranscriptEvent::Task(text) => entries.push(Entry {
-                            kind: "task",
-                            title: text,
-                            result: None,
-                            error: false,
-                        }),
-                        TranscriptEvent::Text(text) => entries.push(Entry {
-                            kind: "text",
-                            title: text,
-                            result: None,
-                            error: false,
-                        }),
-                        TranscriptEvent::Tool { id, title } => {
-                            tools.borrow_mut().insert(id, entries.len());
-                            entries.push(Entry {
-                                kind: "tool",
-                                title,
+            let (reader, path) = (reader.clone(), path.clone());
+            let (list, scroller, entries, tools, loading) = (
+                list.clone(),
+                scroller.clone(),
+                entries.clone(),
+                tools.clone(),
+                loading.clone(),
+            );
+            crate::ui::panel::background(
+                move || reader.lock().map(|mut r| r.read(&path)).unwrap_or_default(),
+                move |objects| {
+                    loading.set(false);
+                    let mut entries = entries.borrow_mut();
+                    let events = crate::claude::transcript_events(&objects, !entries.is_empty());
+                    if events.is_empty() {
+                        return;
+                    }
+                    for event in events {
+                        match event {
+                            TranscriptEvent::Task(text) => entries.push(Entry {
+                                kind: "task",
+                                title: text,
                                 result: None,
                                 error: false,
-                            });
-                        }
-                        TranscriptEvent::Result { id, text, error } => {
-                            if let Some(index) = tools.borrow().get(&id) {
-                                let first = text.trim().lines().next().unwrap_or("").to_string();
-                                let first = if first.is_empty() {
-                                    "Done".to_string()
-                                } else {
-                                    first
-                                };
-                                entries[*index].result = Some(truncate(&first, 140));
-                                entries[*index].error = error;
+                            }),
+                            TranscriptEvent::Text(text) => entries.push(Entry {
+                                kind: "text",
+                                title: text,
+                                result: None,
+                                error: false,
+                            }),
+                            TranscriptEvent::Tool { id, title } => {
+                                tools.borrow_mut().insert(id, entries.len());
+                                entries.push(Entry {
+                                    kind: "tool",
+                                    title,
+                                    result: None,
+                                    error: false,
+                                });
+                            }
+                            TranscriptEvent::Result { id, text, error } => {
+                                if let Some(index) = tools.borrow().get(&id) {
+                                    let first =
+                                        text.trim().lines().next().unwrap_or("").to_string();
+                                    let first = if first.is_empty() {
+                                        "Done".to_string()
+                                    } else {
+                                        first
+                                    };
+                                    entries[*index].result = Some(truncate(&first, 140));
+                                    entries[*index].error = error;
+                                }
                             }
                         }
                     }
-                }
-                render(&list, entries);
-                let adjustment = scroller.vadjustment();
-                glib::idle_add_local_once(move || adjustment.set_value(adjustment.upper()));
-            }
-            loading.set(false);
+                    render(&list, &entries);
+                    let adjustment = scroller.vadjustment();
+                    glib::idle_add_local_once(move || adjustment.set_value(adjustment.upper()));
+                },
+            );
         }
     };
     load();

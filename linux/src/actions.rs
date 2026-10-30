@@ -33,6 +33,7 @@ pub const SHORTCUTS: &[(&str, &[&str], &str)] = &[
         "Open recent conversation",
     ),
     ("app.close-session", &["<Control><Shift>w"], "Close session"),
+    ("app.close-window", &["<Control><Alt>w"], "Close window"),
     ("app.quit", &["<Control><Shift>q"], "Quit"),
     ("app.toggle-panel", &["F9"], "Files panel"),
     ("app.panel-tab::files", &["<Control><Alt>1"], "Files"),
@@ -255,6 +256,7 @@ pub fn install(app: &Rc<App>) {
         }
     });
     add_id(app, "reveal", |app, id| app.reveal(id));
+    add(app, "close-window", |app| app.ui.window.close());
 
     // Sidebar menus: sessions
     add_id(app, "tab-rename", rename_tab);
